@@ -532,19 +532,27 @@ class TransformerEncoderLayer(nn.Module):
             # for backwards compatibility with models that use args.relu_dropout
             self.activation_dropout = getattr(args, 'relu_dropout', 0)
         self.normalize_before = args.encoder_normalize_before
-        self.fc1 = Linear(self.embed_dim, args.encoder_ffn_embed_dim)
-        self.fc2 = Linear(args.encoder_ffn_embed_dim, self.embed_dim)
-        self.final_layer_norm = LayerNorm(self.embed_dim)
+
+        # macaron diff
+        self.fc1 = Linear(self.embed_dim, args.encoder_ffn_embed_dim // 2)
+        self.fc2 = Linear(args.encoder_ffn_embed_dim // 2, self.embed_dim)
+        self.first_layer_norm = LayerNorm(self.embed_dim)
+
+        self.fc3 = Linear(self.embed_dim, args.encoder_ffn_embed_dim // 2)
+        self.fc4 = Linear(args.encoder_ffn_embed_dim // 2, self.embed_dim)
+        self.second_layer_norm = LayerNorm(self.embed_dim)
 
     def upgrade_state_dict_named(self, state_dict, name):
         """
         Rename layer norm states from `...layer_norms.0.weight` to
-        `...self_attn_layer_norm.weight` and `...layer_norms.1.weight` to
-        `...final_layer_norm.weight`
+        `...self_attn_layer_norm.weight`, `...layer_norms.1.weight` to
+        `...first_layer_norm.weight` and `...layer_norms.2.weight` to
+        `...second_layer_norm.weight`
         """
         layer_norm_map = {
             '0': 'self_attn_layer_norm',
-            '1': 'final_layer_norm'
+            '1': 'first_layer_norm',
+            '2': 'second_layer_norm',
         }
         for old, new in layer_norm_map.items():
             for m in ('weight', 'bias'):
@@ -566,6 +574,15 @@ class TransformerEncoderLayer(nn.Module):
             encoded output of shape `(seq_len, batch, embed_dim)`
         """
         residual = x
+        x = self.maybe_layer_norm(self.first_layer_norm, x, before=True)
+        x = self.activation_fn(self.fc1(x))
+        x = F.dropout(x, p=self.activation_dropout, training=self.training)
+        x = self.fc2(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = residual + 0.5 * x
+        x = self.maybe_layer_norm(self.first_layer_norm, x, after=True)
+
+        residual = x
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, before=True)
         x, _ = self.self_attn(query=x, key=x, value=x, key_padding_mask=encoder_padding_mask)
         x = F.dropout(x, p=self.dropout, training=self.training)
@@ -573,13 +590,13 @@ class TransformerEncoderLayer(nn.Module):
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, after=True)
 
         residual = x
-        x = self.maybe_layer_norm(self.final_layer_norm, x, before=True)
-        x = self.activation_fn(self.fc1(x))
+        x = self.maybe_layer_norm(self.second_layer_norm, x, before=True)
+        x = self.activation_fn(self.fc3(x))
         x = F.dropout(x, p=self.activation_dropout, training=self.training)
-        x = self.fc2(x)
+        x = self.fc4(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
-        x = residual + x
-        x = self.maybe_layer_norm(self.final_layer_norm, x, after=True)
+        x = residual + 0.5 * x
+        x = self.maybe_layer_norm(self.second_layer_norm, x, after=True)
         return x
 
     def maybe_layer_norm(self, layer_norm, x, before=False, after=False):
@@ -648,10 +665,14 @@ class TransformerDecoderLayer(nn.Module):
             )
             self.encoder_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
 
-        self.fc1 = Linear(self.embed_dim, args.decoder_ffn_embed_dim)
-        self.fc2 = Linear(args.decoder_ffn_embed_dim, self.embed_dim)
+        self.fc1 = Linear(self.embed_dim, args.decoder_ffn_embed_dim // 2)
+        self.fc2 = Linear(args.decoder_ffn_embed_dim // 2, self.embed_dim)
+        self.first_layer_norm = LayerNorm(self.embed_dim, export=export)
 
-        self.final_layer_norm = LayerNorm(self.embed_dim, export=export)
+        self.fc3 = Linear(self.embed_dim, args.decoder_ffn_embed_dim // 2)
+        self.fc4 = Linear(args.decoder_ffn_embed_dim // 2, self.embed_dim)
+        self.second_layer_norm = LayerNorm(self.embed_dim, export=export)
+
         self.need_attn = True
 
         self.onnx_trace = False
@@ -679,6 +700,15 @@ class TransformerDecoderLayer(nn.Module):
         Returns:
             encoded output of shape `(seq_len, batch, embed_dim)`
         """
+        residual = x
+        x = self.maybe_layer_norm(self.first_layer_norm, x, before=True)
+        x = self.activation_fn(self.fc1(x))
+        x = F.dropout(x, p=self.activation_dropout, training=self.training)
+        x = self.fc2(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = residual + 0.5 * x
+        x = self.maybe_layer_norm(self.first_layer_norm, x, after=True)
+
         residual = x
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, before=True)
         if prev_self_attn_state is not None:
@@ -723,13 +753,14 @@ class TransformerDecoderLayer(nn.Module):
             x = self.maybe_layer_norm(self.encoder_attn_layer_norm, x, after=True)
 
         residual = x
-        x = self.maybe_layer_norm(self.final_layer_norm, x, before=True)
-        x = self.activation_fn(self.fc1(x))
+        x = self.maybe_layer_norm(self.second_layer_norm, x, before=True)
+        x = self.activation_fn(self.fc3(x))
         x = F.dropout(x, p=self.activation_dropout, training=self.training)
-        x = self.fc2(x)
+        x = self.fc4(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
-        x = residual + x
-        x = self.maybe_layer_norm(self.final_layer_norm, x, after=True)
+        x = residual + 0.5 * x
+        x = self.maybe_layer_norm(self.second_layer_norm, x, after=True)
+
         if self.onnx_trace and incremental_state is not None:
             saved_state = self.self_attn._get_input_buffer(incremental_state)
             self_attn_state = saved_state["prev_key"], saved_state["prev_value"]
