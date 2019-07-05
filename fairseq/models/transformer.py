@@ -114,7 +114,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         parser.add_argument('--adaptive-softmax-dropout', type=float, metavar='D',
                             help='sets adaptive softmax dropout for the tail projections')
 
-        parser.add_argument('--num_ffn', type=int, metavar='N', help='num FFN layers', default=1)
+        parser.add_argument('--num_ffn', type=int, metavar='N', help='num FFN layers')
         # fmt: on
 
     @classmethod
@@ -820,6 +820,8 @@ def base_architecture(args):
 
     args.decoder_output_dim = getattr(args, 'decoder_output_dim', args.decoder_embed_dim)
     args.decoder_input_dim = getattr(args, 'decoder_input_dim', args.decoder_embed_dim)
+
+    args.num_ffn = getattr(args, 'num_ffn', 1)
 
 
 @register_model_architecture('transformer', 'transformer_iwslt_de_en')
