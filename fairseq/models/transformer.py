@@ -544,10 +544,10 @@ class TransformerEncoderLayer(nn.Module):
                 nn.Dropout(p=self.activation_dropout),
                 Linear(args.encoder_ffn_embed_dim // 2, self.embed_dim),
                 nn.Dropout(p=self.dropout)
-            ) for _ in self.num_ffn
+            ) for _ in range(self.num_ffn)
         ])
         self.ffn_layer_norms = nn.ModuleList([
-            LayerNorm(self.embed_dim) for _ in self.num_ffn
+            LayerNorm(self.embed_dim) for _ in range(self.num_ffn)
         ])
         self.ffn_coef = 1.0
 
@@ -674,10 +674,10 @@ class TransformerDecoderLayer(nn.Module):
                 nn.Dropout(p=self.activation_dropout),
                 Linear(args.decoder_ffn_embed_dim // 2, self.embed_dim),
                 nn.Dropout(p=self.dropout)
-            ) for _ in self.num_ffn
+            ) for _ in range(self.num_ffn)
         ])
         self.ffn_layer_norms = nn.ModuleList([
-            LayerNorm(self.embed_dim, export=export) for _ in self.num_ffn
+            LayerNorm(self.embed_dim, export=export) for _ in range(self.num_ffn)
         ])
 
         self.ffn_coef = 1.0
