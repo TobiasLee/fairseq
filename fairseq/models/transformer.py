@@ -113,6 +113,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
                                  'Must be used with adaptive_loss criterion'),
         parser.add_argument('--adaptive-softmax-dropout', type=float, metavar='D',
                             help='sets adaptive softmax dropout for the tail projections')
+
+        parser.add_argument('--num_ffn', type=int, metavar='N', help='num FFN layers', default=1)
         # fmt: on
 
     @classmethod
@@ -532,34 +534,42 @@ class TransformerEncoderLayer(nn.Module):
             # for backwards compatibility with models that use args.relu_dropout
             self.activation_dropout = getattr(args, 'relu_dropout', 0)
         self.normalize_before = args.encoder_normalize_before
+        self.num_ffn = args.num_ffn
 
-        # macaron diff
-        self.fc1 = Linear(self.embed_dim, args.encoder_ffn_embed_dim // 2)
-        self.fc2 = Linear(args.encoder_ffn_embed_dim // 2, self.embed_dim)
-        self.first_layer_norm = LayerNorm(self.embed_dim)
-
-        self.fc3 = Linear(self.embed_dim, args.encoder_ffn_embed_dim // 2)
-        self.fc4 = Linear(args.encoder_ffn_embed_dim // 2, self.embed_dim)
-        self.second_layer_norm = LayerNorm(self.embed_dim)
+        # deeper FFN
+        self.ffn = nn.ModuleList([
+            nn.Sequential(
+                Linear(self.embed_dim, args.encoder_ffn_embed_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(p=self.activation_dropout),
+                Linear(args.encoder_ffn_embed_dim // 2, self.embed_dim),
+                nn.Dropout(p=self.dropout)
+            ) for _ in self.num_ffn
+        ])
+        self.ffn_layer_norms = nn.ModuleList([
+            LayerNorm(self.embed_dim) for _ in self.num_ffn
+        ])
+        self.ffn_coef = 1.0
 
     def upgrade_state_dict_named(self, state_dict, name):
         """
         Rename layer norm states from `...layer_norms.0.weight` to
-        `...self_attn_layer_norm.weight`, `...layer_norms.1.weight` to
-        `...first_layer_norm.weight` and `...layer_norms.2.weight` to
-        `...second_layer_norm.weight`
+        `...self_attn_layer_norm.weight` and `...layer_norms.i.weight` to
+        `...ffn_layer_norm.i.weight`
         """
-        layer_norm_map = {
-            '0': 'self_attn_layer_norm',
-            '1': 'first_layer_norm',
-            '2': 'second_layer_norm',
-        }
-        for old, new in layer_norm_map.items():
-            for m in ('weight', 'bias'):
-                k = '{}.layer_norms.{}.{}'.format(name, old, m)
+        for m in ('weight', 'bias'):
+            k = '{}.layer_norms.0.{}'.format(name, m)
+            if k in state_dict:
+                state_dict[
+                    '{}.self_attn_layer_norm.{}'.format(name, m)
+                ] = state_dict[k]
+                del state_dict[k]
+
+            for i in range(1, self.num_ffn + 1):
+                k = '{}.layer_norms.{}.{}'.format(name, i, m)
                 if k in state_dict:
                     state_dict[
-                        '{}.{}.{}'.format(name, new, m)
+                        '{}.ffn_layer_norm.{}.{}'.format(name, i, m)
                     ] = state_dict[k]
                     del state_dict[k]
 
@@ -580,23 +590,13 @@ class TransformerEncoderLayer(nn.Module):
         x = residual + x
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, after=True)
 
-        residual = x
-        x = self.maybe_layer_norm(self.first_layer_norm, x, before=True)
-        x = self.activation_fn(self.fc1(x))
-        x = F.dropout(x, p=self.activation_dropout, training=self.training)
-        x = self.fc2(x)
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = residual + 0.5 * x
-        x = self.maybe_layer_norm(self.first_layer_norm, x, after=True)
+        for i in range(self.num_ffn):
+            residual = x
+            x = self.maybe_layer_norm(self.ffn_layer_norms[i], x, before=True)
+            x = self.ffn[i](x)
+            x = residual + self.ffn_coef * x
+            x = self.maybe_layer_norm(self.ffn_layer_norms[i], x, after=True)
 
-        residual = x
-        x = self.maybe_layer_norm(self.second_layer_norm, x, before=True)
-        x = self.activation_fn(self.fc3(x))
-        x = F.dropout(x, p=self.activation_dropout, training=self.training)
-        x = self.fc4(x)
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = residual + 0.5 * x
-        x = self.maybe_layer_norm(self.second_layer_norm, x, after=True)
         return x
 
     def maybe_layer_norm(self, layer_norm, x, before=False, after=False):
@@ -665,13 +665,22 @@ class TransformerDecoderLayer(nn.Module):
             )
             self.encoder_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
 
-        self.fc1 = Linear(self.embed_dim, args.decoder_ffn_embed_dim // 2)
-        self.fc2 = Linear(args.decoder_ffn_embed_dim // 2, self.embed_dim)
-        self.first_layer_norm = LayerNorm(self.embed_dim, export=export)
+        # deeper FFN
+        self.num_ffn = args.num_ffn
+        self.ffn = nn.ModuleList([
+            nn.Sequential(
+                Linear(self.embed_dim, args.decoder_ffn_embed_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(p=self.activation_dropout),
+                Linear(args.decoder_ffn_embed_dim // 2, self.embed_dim),
+                nn.Dropout(p=self.dropout)
+            ) for _ in self.num_ffn
+        ])
+        self.ffn_layer_norms = nn.ModuleList([
+            LayerNorm(self.embed_dim, export=export) for _ in self.num_ffn
+        ])
 
-        self.fc3 = Linear(self.embed_dim, args.decoder_ffn_embed_dim // 2)
-        self.fc4 = Linear(args.decoder_ffn_embed_dim // 2, self.embed_dim)
-        self.second_layer_norm = LayerNorm(self.embed_dim, export=export)
+        self.ffn_coef = 1.0
 
         self.need_attn = True
 
@@ -743,23 +752,12 @@ class TransformerDecoderLayer(nn.Module):
             x = residual + x
             x = self.maybe_layer_norm(self.encoder_attn_layer_norm, x, after=True)
 
-        residual = x
-        x = self.maybe_layer_norm(self.first_layer_norm, x, before=True)
-        x = self.activation_fn(self.fc1(x))
-        x = F.dropout(x, p=self.activation_dropout, training=self.training)
-        x = self.fc2(x)
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = residual + 0.5 * x
-        x = self.maybe_layer_norm(self.first_layer_norm, x, after=True)
-
-        residual = x
-        x = self.maybe_layer_norm(self.second_layer_norm, x, before=True)
-        x = self.activation_fn(self.fc3(x))
-        x = F.dropout(x, p=self.activation_dropout, training=self.training)
-        x = self.fc4(x)
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = residual + 0.5 * x
-        x = self.maybe_layer_norm(self.second_layer_norm, x, after=True)
+        for i in range(self.num_ffn):
+            residual = x
+            x = self.maybe_layer_norm(self.ffn_layer_norms[i], x, before=True)
+            x = self.ffn[i](x)
+            x = residual + self.ffn_coef * x
+            x = self.maybe_layer_norm(self.ffn_layer_norms[i], x, before=True)
 
         if self.onnx_trace and incremental_state is not None:
             saved_state = self.self_attn._get_input_buffer(incremental_state)
@@ -844,6 +842,12 @@ def transformer_iwslt_de_en_v2(args):
     args.attention_dropout = getattr(args, 'attention_dropout', 0.1)
     args.activation_dropout = getattr(args, 'activation_dropout', 0.1)
     transformer_iwslt_de_en(args)
+
+
+@register_model_architecture('transformer', 'deeper_iwslt_de_en_v2')
+def deeper_iwslt_de_en_v2(args):
+    args.num_ffn = getattr(args, 'num_ffn', 2)
+    transformer_iwslt_de_en_v2(args)
 
 
 @register_model_architecture('transformer', 'transformer_wmt_en_de')
