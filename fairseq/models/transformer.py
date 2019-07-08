@@ -675,6 +675,7 @@ class TransformerDecoderLayer(nn.Module):
                 nn.ReLU(),
                 nn.Dropout(p=self.activation_dropout),
                 Linear(args.decoder_ffn_embed_dim // self.num_ffn, self.embed_dim),
+                nn.ReLU(),
                 nn.Dropout(p=self.dropout)
             ) for _ in range(self.num_ffn)
         ])
