@@ -672,10 +672,8 @@ class TransformerDecoderLayer(nn.Module):
             nn.Sequential(
                 Linear(self.embed_dim, args.decoder_ffn_embed_dim // self.num_ffn),
                 LayerNorm(self.embed_dim, export=export),
-                nn.ReLU(),
                 nn.Dropout(p=self.activation_dropout),
                 Linear(args.decoder_ffn_embed_dim // self.num_ffn, self.embed_dim),
-                nn.ReLU(),
                 nn.Dropout(p=self.dropout)
             ) for _ in range(self.num_ffn)
         ])
