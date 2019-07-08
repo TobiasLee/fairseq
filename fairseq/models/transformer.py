@@ -540,7 +540,6 @@ class TransformerEncoderLayer(nn.Module):
         self.ffn = nn.ModuleList([
             nn.Sequential(
                 Linear(self.embed_dim, args.encoder_ffn_embed_dim // self.num_ffn),
-                LayerNorm(self.embed_dim),
                 nn.ReLU(),
                 nn.Dropout(p=self.activation_dropout),
                 Linear(args.encoder_ffn_embed_dim // self.num_ffn, self.embed_dim),
@@ -671,7 +670,7 @@ class TransformerDecoderLayer(nn.Module):
         self.ffn = nn.ModuleList([
             nn.Sequential(
                 Linear(self.embed_dim, args.decoder_ffn_embed_dim // self.num_ffn),
-                LayerNorm(self.embed_dim, export=export),
+                nn.ReLU(),
                 nn.Dropout(p=self.activation_dropout),
                 Linear(args.decoder_ffn_embed_dim // self.num_ffn, self.embed_dim),
                 nn.Dropout(p=self.dropout)
