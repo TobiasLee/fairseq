@@ -1,5 +1,6 @@
 import os
 import argparse
+import inspect
 import re
 import time
 import uuid
@@ -65,7 +66,9 @@ def main():
     with open('{}.json'.format(branch), 'w') as f:
         json.dump(payload, f)
 
-    subprocess.run(['./upload_status.sh', branch])
+    path = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+
+    subprocess.run([os.path.join(path, 'upload_status.sh'), branch])
 
 
 if __name__ == '__main__':
