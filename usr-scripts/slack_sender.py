@@ -46,10 +46,7 @@ def main():
 
     start_at = time.time()
 
-    script_output = subprocess.Popen(args.script,
-                                     stdout=subprocess.PIPE,
-                                     stderr=subprocess.STDOUT)
-    script_output.communicate()
+    os.system(args.script)
 
     message = process_result(args.result_path)
 
