@@ -5,15 +5,18 @@ branch=$1
 
 # clone proxy folder and create new branch
 git clone --depth=1 --single-branch https://github.com/Luolc/experiment-status-proxy.git ${branch}
-cd ${branch} && git checkout -b ${branch}
+cd ${branch}
+git checkout -b ${branch}
 
 # copy status file
-cp ${branch}.json ${branch}/status-payload/${branch}.json
-cd ${branch} && git add status-payload/${branch}.json
-cd ${branch} && git commit -m "${branch}"
-cd ${branch} && git push \
+cp ../${branch}.json status-payload/${branch}.json
+git add status-payload/${branch}.json
+git commit -m "${branch}"
+git push \
     https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Luolc/experiment-status-proxy.git \
     -u origin ${branch}
+
+cd ..
 
 # remove proxy folder
 rm -rf ${branch}
