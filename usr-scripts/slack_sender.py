@@ -1,13 +1,16 @@
 import os
 import argparse
 import re
-import slacker
+import time
+import uuid
+import subprocess
+import json
 
 
 def get_parser():
-    parser = argparse.ArgumentParser(description='Slack wrapper for fairseq train/valid')
+    parser = argparse.ArgumentParser(description='Experiment Status wrapper')
     parser.add_argument('--name', type=str, help='experiment name')
-    parser.add_argument('--script', type=str, help='script path')
+    parser.add_argument('--script', type=str, help='script command or path')
     parser.add_argument('--result_path', type=str, help='result path')
 
     return parser
@@ -38,12 +41,31 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
 
-    token = os.environ['SLACK_TOKEN']
-    channel = os.environ['SLACK_CHANNEL']
-    manager = slacker.StatusManager(args.name, token, channel)
-    manager.on_completed = lambda stdout, stderr: process_result(args.result_path)
+    identifier = str(uuid.uuid1()).lower()
 
-    manager.run_script(args.script)
+    start_at = time.time()
+
+    script_output = subprocess.Popen(args.script,
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT)
+    script_output.communicate()
+
+    message = process_result(args.result_path)
+
+    end_at = time.time()
+
+    payload = {
+        'type': 'completed',
+        'name': args.name,
+        'start_at': start_at,
+        'end_at': end_at,
+        'message': message,
+    }
+    branch = '{}-completed'.format(identifier)
+    with open('{}.json'.format(branch), 'w') as f:
+        json.dump(payload, f)
+
+    subprocess.run(['./upload_status.sh', branch])
 
 
 if __name__ == '__main__':
