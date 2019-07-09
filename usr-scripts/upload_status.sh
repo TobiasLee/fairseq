@@ -12,9 +12,8 @@ git checkout -b ${branch}
 cp ../${branch}.json status-payload/${branch}.json
 git add status-payload/${branch}.json
 git commit -m "${branch}"
-git push \
-    https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Luolc/experiment-status-proxy.git \
-    -u origin ${branch}
+git push -u \
+    https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Luolc/experiment-status-proxy.git ${branch}
 
 cd ..
 

@@ -57,7 +57,7 @@ def main():
 
     payload = {
         'type': 'completed',
-        'name': args.name,
+        'expr_name': args.name,
         'start_at': start_at,
         'end_at': end_at,
         'message': message,
