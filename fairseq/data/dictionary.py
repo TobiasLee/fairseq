@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 from collections import Counter
 from multiprocessing import Pool
@@ -52,6 +50,9 @@ class Dictionary(object):
         """Returns the number of symbols in the dictionary"""
         return len(self.symbols)
 
+    def __contains__(self, sym):
+        return sym in self.indices
+
     def index(self, sym):
         """Returns the index of the specified symbol"""
         assert isinstance(sym, str)
@@ -73,7 +74,10 @@ class Dictionary(object):
             else:
                 return self[i]
 
-        sent = ' '.join(token_string(i) for i in tensor if i != self.eos())
+        if hasattr(self, 'bos_index'):
+            sent = ' '.join(token_string(i) for i in tensor if (i != self.eos()) and (i != self.bos()))
+        else:
+            sent = ' '.join(token_string(i) for i in tensor if i != self.eos())
         return data_utils.process_bpe_symbol(sent, bpe_symbol)
 
     def unk_string(self, escape=False):

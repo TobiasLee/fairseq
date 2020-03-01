@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import torch
 import torch.nn as nn
@@ -283,9 +281,9 @@ class AttentionLayer(nn.Module):
 
     def forward(self, input, source_hids, encoder_padding_mask):
         # input: bsz x input_embed_dim
-        # source_hids: srclen x bsz x output_embed_dim
+        # source_hids: srclen x bsz x source_embed_dim
 
-        # x: bsz x output_embed_dim
+        # x: bsz x source_embed_dim
         x = self.input_proj(input)
 
         # compute attention

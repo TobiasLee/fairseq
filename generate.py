@@ -1,10 +1,8 @@
 #!/usr/bin/env python3 -u
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 """
 Translate pre-processed data with a trained model.
 """
@@ -135,11 +133,11 @@ def main(args):
                         print('T-{}\t{}'.format(sample_id, target_str))
 
                 # Process top predictions
-                for j, hypo in enumerate(hypos[i][:min(len(hypos), args.nbest)]):
+                for j, hypo in enumerate(hypos[i][:args.nbest]):
                     hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
                         hypo_tokens=hypo['tokens'].int().cpu(),
                         src_str=src_str,
-                        alignment=hypo['alignment'].int().cpu() if hypo['alignment'] is not None else None,
+                        alignment=hypo['alignment'],
                         align_dict=align_dict,
                         tgt_dict=tgt_dict,
                         remove_bpe=args.remove_bpe,
@@ -158,8 +156,11 @@ def main(args):
                         if args.print_alignment:
                             print('A-{}\t{}'.format(
                                 sample_id,
-                                ' '.join(map(lambda x: str(utils.item(x)), alignment))
+                                ' '.join(['{}-{}'.format(src_idx, tgt_idx) for src_idx, tgt_idx in alignment])
                             ))
+
+                        if args.print_step:
+                            print('I-{}\t{}'.format(sample_id, hypo['steps']))
 
                     # Score only the top hypothesis
                     if has_target and j == 0:
@@ -179,6 +180,7 @@ def main(args):
         num_sentences, gen_timer.n, gen_timer.sum, num_sentences / gen_timer.sum, 1. / gen_timer.avg))
     if has_target:
         print('| Generate {} with beam={}: {}'.format(args.gen_subset, args.beam, scorer.result_string()))
+
     return scorer
 
 

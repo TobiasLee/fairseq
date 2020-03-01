@@ -1,10 +1,8 @@
 #!/usr/bin/env python3 -u
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 """
 Translate raw text with a trained model. Batches data on-the-fly.
 """
@@ -15,6 +13,7 @@ import fileinput
 import torch
 
 from fairseq import checkpoint_utils, options, tasks, utils
+from fairseq.data import encoders
 
 
 Batch = namedtuple('Batch', 'ids src_tokens src_lengths')
@@ -101,17 +100,23 @@ def main(args):
     # Initialize generator
     generator = task.build_generator(args)
 
-    # Hack to support GPT-2 BPE
-    if args.remove_bpe == 'gpt2':
-        from fairseq.gpt2_bpe.gpt2_encoding import get_encoder
-        decoder = get_encoder(
-            'fairseq/gpt2_bpe/encoder.json',
-            'fairseq/gpt2_bpe/vocab.bpe',
-        )
-        encode_fn = lambda x: ' '.join(map(str, decoder.encode(x)))
-    else:
-        decoder = None
-        encode_fn = lambda x: x
+    # Handle tokenization and BPE
+    tokenizer = encoders.build_tokenizer(args)
+    bpe = encoders.build_bpe(args)
+
+    def encode_fn(x):
+        if tokenizer is not None:
+            x = tokenizer.encode(x)
+        if bpe is not None:
+            x = bpe.encode(x)
+        return x
+
+    def decode_fn(x):
+        if bpe is not None:
+            x = bpe.decode(x)
+        if tokenizer is not None:
+            x = tokenizer.decode(x)
+        return x
 
     # Load alignment dictionary for unknown word replacement
     # (None if no unknown word replacement, empty if no path to align dictionary)
@@ -157,22 +162,22 @@ def main(args):
                 hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
                     hypo_tokens=hypo['tokens'].int().cpu(),
                     src_str=src_str,
-                    alignment=hypo['alignment'].int().cpu() if hypo['alignment'] is not None else None,
+                    alignment=hypo['alignment'],
                     align_dict=align_dict,
                     tgt_dict=tgt_dict,
                     remove_bpe=args.remove_bpe,
                 )
-                if decoder is not None:
-                    hypo_str = decoder.decode(map(int, hypo_str.strip().split()))
+                hypo_str = decode_fn(hypo_str)
                 print('H-{}\t{}\t{}'.format(id, hypo['score'], hypo_str))
                 print('P-{}\t{}'.format(
                     id,
                     ' '.join(map(lambda x: '{:.4f}'.format(x), hypo['positional_scores'].tolist()))
                 ))
                 if args.print_alignment:
+                    alignment_str = " ".join(["{}-{}".format(src, tgt) for src, tgt in alignment])
                     print('A-{}\t{}'.format(
                         id,
-                        ' '.join(map(lambda x: str(utils.item(x)), alignment))
+                        alignment_str
                     ))
 
         # update running id counter
