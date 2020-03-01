@@ -14,15 +14,15 @@ import sys
 import numpy as np
 import torchvision
 import torch.nn as nn
-import dataloader
-import evaluation
-import projection as proj
-import net_plotter
-import plot_2D
-import plot_1D
-import model_loader
-import scheduler
-import mpi4pytorch as mpi
+from . import dataloader
+from . import evaluation
+from . import projection as proj
+from . import net_plotter
+from . import plot_2D
+from . import plot_1D
+from . import model_loader
+from . import scheduler
+from . import mpi4pytorch as mpi
 
 
 def name_surface_file(args, dir_file):
@@ -39,10 +39,10 @@ def name_surface_file(args, dir_file):
         surf_file += 'x[%s,%s,%d]' % (str(args.ymin), str(args.ymax), int(args.ynum))
 
     # dataloder parameters
-    if args.raw_data:  # without data normalization
-        surf_file += '_rawdata'
-    if args.data_split > 1:
-        surf_file += '_datasplit=' + str(args.data_split) + '_splitidx=' + str(args.split_idx)
+    #if args.raw_data:  # without data normalization
+    #    surf_file += '_rawdata'
+    #if args.data_split > 1:
+    #    surf_file += '_datasplit=' + str(args.data_split) + '_splitidx=' + str(args.split_idx)
 
     return surf_file + ".h5"
 
@@ -58,7 +58,7 @@ def setup_surface_file(args, surf_file, dir_file):
 
     f = h5py.File(surf_file, 'a')
     f['dir_file'] = dir_file
-
+   
     # Create the coordinates(resolutions) at which the function is evaluated
     xcoordinates = np.linspace(args.xmin, args.xmax, num=args.xnum)
     f['xcoordinates'] = xcoordinates

@@ -8,7 +8,7 @@ import os
 import copy
 import h5py
 import net_plotter
-import model_loader
+# import model_loader
 import h5_util
 from sklearn.decomposition import PCA
 
@@ -153,7 +153,7 @@ def project_trajectory(dir_file, w, s, dataset, model_name, model_files,
 
     xcoord, ycoord = [], []
     for model_file in model_files:
-        net2 = model_loader.load(dataset, model_name, model_file)
+        # net2 = model_loader.load(dataset, model_name, model_file)
         if dir_type == 'weights':
             w2 = net_plotter.get_weights(net2)
             d = net_plotter.get_diff_weights(w, w2)
@@ -204,7 +204,8 @@ def setup_PCA_directions(args, model_files, w, s):
     matrix = []
     for model_file in model_files:
         print (model_file)
-        net2 = model_loader.load(args.dataset, args.model, model_file)
+        
+        # net2 = model_loader.load(args.dataset, args.model, model_file)
         if args.dir_type == 'weights':
             w2 = net_plotter.get_weights(net2)
             d = net_plotter.get_diff_weights(w, w2)

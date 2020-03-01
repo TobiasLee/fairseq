@@ -48,10 +48,11 @@ def main(args, init_distributed=False):
     # Print args
     print(args)
     try:
-        args.xmin, args.xmax, args.xnum = [float(a) for a in args.x.split(':')]
+        args.xmin, args.xmax, args.xnum = [int(a) for a in args.x.split(':')]
+        print(args.xmin, args.xmax, args.xnum)
         args.ymin, args.ymax, args.ynum = (None, None, None)
         if args.y:
-            args.ymin, args.ymax, args.ynum = [float(a) for a in args.y.split(':')]
+            args.ymin, args.ymax, args.ynum = [int(a) for a in args.y.split(':')]
             assert args.ymin and args.ymax and args.ynum, \
                 'You specified some arguments for the y axis, but not all'
     except:
@@ -85,7 +86,7 @@ def main(args, init_distributed=False):
     # corresponding train iterator
     # extra_state, epoch_itr = checkpoint_utils.load_checkpoint(args, trainer)
     extra_state = trainer.load_checkpoint(
-        args.checkpoint_path,
+        args.restore_file,
         args.reset_optimizer,
         args.reset_lr_scheduler,
         eval(args.optimizer_overrides),
@@ -350,8 +351,8 @@ def cli_main():
     parser.add_argument('--mpi', '-m', action='store_true', help='use mpi')
     # parser.add_argument('--cuda', '-c', action='store_true', help='use cuda')
     parser.add_argument('--threads', default=2, type=int, help='number of threads')
-    # parser.add_argument('--ngpu', type=int, default=1,
-    #                     help='number of GPUs to use for each rank, useful for data parallel evaluation')
+    parser.add_argument('--ngpu', type=int, default=1,
+                         help='number of GPUs to use for each rank, useful for data parallel evaluation')
     parser.add_argument('--batch_size', default=128, type=int, help='minibatch size')
 
     # data parameters
@@ -360,10 +361,10 @@ def cli_main():
     # parser.add_argument('--testloader', default='', help='path to the testloader with random labels')
 
     # model parameters
-    # parser.add_argument('--model-folder', default='', help='the common folder that contains model_file and model_file2')
-    # parser.add_argument('--model-file', default='', help='path to the trained model file')
-    # parser.add_argument('--model-file2', default='', help='use (model_file2 - model_file) as the xdirection')
-    # parser.add_argument('--model-file3', default='', help='use (model_file3 - model_file) as the ydirection')
+    parser.add_argument('--model-folder', default='', help='the common folder that contains model_file and model_file2')
+    parser.add_argument('--model-file', default='', help='path to the trained model file')
+    parser.add_argument('--model-file2', default='', help='use (model_file2 - model_file) as the xdirection')
+    parser.add_argument('--model-file3', default='', help='use (model_file3 - model_file) as the ydirection')
 
     # direction parameters
     parser.add_argument('--dir-file', default='',
