@@ -89,6 +89,13 @@ class FairseqOptimizer(object):
         else:
             return math.sqrt(sum(p.grad.data.norm()**2 for p in self.params if p.grad is not None))
 
+    def clip_grad_norm_by_name(self, max_norm):
+        """clip grad only on specific weights"""
+        if max_norm > 0:
+            return torch.nn.utils.clip_grad_norm_(self.params, max_norm)
+        else:
+            return math.sqrt(sum(p.grad.data.norm()**2 for p in self.params if p.grad is not None))
+
     def step(self, closure=None):
         """Performs a single optimization step."""
         self.optimizer.step(closure)
