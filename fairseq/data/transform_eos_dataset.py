@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import torch
 
@@ -80,15 +78,19 @@ class TransformEosDataset(FairseqDataset):
 
         def transform(item):
             if self.append_eos_to_src:
+                self.eos = self.eos.to(device=item['source'].device)
                 self._check_src(item['source'], expect_eos=False)
                 item['source'] = torch.cat([item['source'], self.eos])
             if self.remove_eos_from_src:
+                self.eos = self.eos.to(device=item['source'].device)
                 self._check_src(item['source'], expect_eos=True)
                 item['source'] = item['source'][:-1]
             if self.append_eos_to_tgt:
+                self.eos = self.eos.to(device=item['target'].device)
                 self._check_tgt(item['target'], expect_eos=False)
                 item['target'] = torch.cat([item['target'], self.eos])
             if self.remove_eos_from_tgt:
+                self.eos = self.eos.to(device=item['target'].device)
                 self._check_tgt(item['target'], expect_eos=True)
                 item['target'] = item['target'][:-1]
             return item

@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import math
 import torch
@@ -15,7 +13,7 @@ from . import FairseqOptimizer, register_optimizer
 @register_optimizer('adafactor')
 class FairseqAdafactor(FairseqOptimizer):
     def __init__(self, args, params):
-        super().__init__(args, params)
+        super().__init__(args)
         self._optimizer = Adafactor(params, **self.optimizer_config)
 
     @staticmethod
@@ -123,7 +121,7 @@ class Adafactor(torch.optim.Optimizer):
         return tensor.norm(2) / (tensor.numel() ** 0.5)
 
     def _approx_sq_grad(self, exp_avg_sq_row, exp_avg_sq_col, output):
-        r_factor = (exp_avg_sq_row / exp_avg_sq_row.mean(dim=-1)).rsqrt_().unsqueeze(-1)
+        r_factor = (exp_avg_sq_row / exp_avg_sq_row.mean(dim=-1).unsqueeze(-1)).rsqrt_().unsqueeze(-1)
         c_factor = exp_avg_sq_col.unsqueeze(-2).rsqrt()
         torch.mul(r_factor, c_factor, out=output)
 

@@ -1,24 +1,13 @@
-# Copyright (c) 2017-present, Facebook, Inc.  # All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
-
-import contextlib
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import torch
 
 from fairseq import modules, utils
 from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask
-
-
-@contextlib.contextmanager
-def eval(model):
-    is_training = model.training
-    model.eval()
-    yield
-    model.train(is_training)
 
 
 @register_task('translation_moe')
@@ -132,13 +121,19 @@ class TranslationMoETask(TranslationTask):
         bsz = sample['target'].size(0)
 
         def get_lprob_y(encoder_out, prev_output_tokens_k):
-            net_output = model.decoder(prev_output_tokens_k, encoder_out)
+            net_output = model.decoder(
+                prev_output_tokens=prev_output_tokens_k,
+                encoder_out=encoder_out,
+            )
             loss, _ = criterion.compute_loss(model, net_output, sample, reduce=False)
             loss = loss.view(bsz, -1)
             return -loss.sum(dim=1, keepdim=True)  # -> B x 1
 
         def get_lprob_yz(winners=None):
-            encoder_out = model.encoder(sample['net_input']['src_tokens'], sample['net_input']['src_lengths'])
+            encoder_out = model.encoder(
+                src_tokens=sample['net_input']['src_tokens'],
+                src_lengths=sample['net_input']['src_lengths'],
+            )
 
             if winners is None:
                 lprob_y = []
@@ -164,7 +159,7 @@ class TranslationMoETask(TranslationTask):
             return lprob_yz
 
         # compute responsibilities without dropout
-        with eval(model):  # disable dropout
+        with utils.eval(model):  # disable dropout
             with torch.no_grad():  # disable autograd
                 lprob_yz = get_lprob_yz()  # B x K
                 prob_z_xy = torch.nn.functional.softmax(lprob_yz, dim=1)

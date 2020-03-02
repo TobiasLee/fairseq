@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 from fairseq import options
 from fairseq.models import (
@@ -103,9 +101,9 @@ class LightConvLanguageModel(FairseqLanguageModel):
         # make sure all arguments are present in older models
         base_lm_architecture(args)
 
-        if not hasattr(args, 'max_source_positions'):
+        if getattr(args, 'max_source_positions', None) is None:
             args.max_source_positions = args.tokens_per_sample
-        if not hasattr(args, 'max_target_positions'):
+        if getattr(args, 'max_target_positions', None) is None:
             args.max_target_positions = args.tokens_per_sample
 
         if args.character_embeddings:
@@ -147,6 +145,7 @@ def base_lm_architecture(args):
 
     args.decoder_output_dim = getattr(args, 'decoder_output_dim', args.decoder_embed_dim)
     args.decoder_input_dim = getattr(args, 'decoder_input_dim', args.decoder_embed_dim)
+    args.decoder_conv_dim = getattr(args, 'decoder_conv_dim', args.decoder_embed_dim)
 
     # The model training is not stable without this
     args.decoder_normalize_before = True
@@ -161,6 +160,10 @@ def base_lm_architecture(args):
     args.decoder_kernel_size_list = getattr(args, 'decoder_kernel_size_list', [3, 7, 15, 31, 31, 31])
     if len(args.decoder_kernel_size_list) == 1:
         args.decoder_kernel_size_list = args.decoder_kernel_size_list * args.decoder_layers
+    assert len(args.decoder_kernel_size_list) == args.decoder_layers, "decoder_kernel_size_list doesn't match decoder_layers"
+    args.decoder_glu = getattr(args, 'decoder_glu', True)
+    args.input_dropout = getattr(args, 'input_dropout', 0.1)
+    args.weight_dropout = getattr(args, 'weight_dropout', args.attention_dropout)
 
 
 @register_model_architecture('lightconv_lm', 'lightconv_lm_gbw')

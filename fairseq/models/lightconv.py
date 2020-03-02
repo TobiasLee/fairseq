@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import math
 
@@ -21,10 +19,10 @@ from fairseq.models import (
 )
 from fairseq.modules import (
     AdaptiveSoftmax,
-    DynamicConv1dTBC,
+    DynamicConv,
     LayerNorm,
     PositionalEmbedding,
-    LightweightConv1dTBC,
+    LightweightConv,
     MultiheadAttention,
 )
 
@@ -34,8 +32,8 @@ class LightConvModel(FairseqEncoderDecoderModel):
     """
     LightConv and DynamicConv model from `"Pay Less Attention with Lightweight and Dynamic Convolutions" (Wu, et al, 2019)
     <https://openreview.net/pdf?id=SkVhlh09tX>`_.
-    To use LightConv please set --encoder-conv-type lightweight --decoder-conv-type lightweight
-    To use DynamicConv please set --encoder-conv-type dynamic --decoder-conv-type dynamic
+    To use LightConv please set ``--encoder-conv-type lightweight --decoder-conv-type lightweight``
+    To use DynamicConv please set ``--encoder-conv-type dynamic --decoder-conv-type dynamic``
 
     Args:
         encoder (LightConvEncoder): the encoder
@@ -48,6 +46,33 @@ class LightConvModel(FairseqEncoderDecoderModel):
         :ref: fairseq.models.lightconv_parser
         :prog:
     """
+
+    @classmethod
+    def hub_models(cls):
+        # fmt: off
+
+        def moses_subword(path):
+            return {
+                'path': path,
+                'tokenizer': 'moses',
+                'bpe': 'subword_nmt',
+            }
+
+        return {
+            'lightconv.no_glu.iwslt14.de-en': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/iwslt14.de-en.lightconv.tar.gz'),
+            'dynamicconv.no_glu.iwslt14.de-en': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/iwslt14.de-en.dynamicconv.tar.gz'),
+            'lightconv.no_glu.wmt16.en-de': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt16.en-de.joined-dict.lightconv.tar.gz'),
+            'dynamicconv.no_glu.wmt16.en-de': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt16.en-de.joined-dict.dynamicconv.tar.gz'),
+            'lightconv.glu.wmt16.en-de': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt16.en-de.joined-dict.lightconv-glu.tar.gz'),
+            'dynamicconv.glu.wmt16.en-de': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt16.en-de.joined-dict.dynamicconv-glu.tar.gz'),
+            'lightconv.glu.wmt17.en-de': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt16.en-de.joined-dict.lightconv-glu.tar.gz'),
+            'dynamicconv.glu.wmt17.en-de': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt16.en-de.joined-dict.dynamicconv-glu.tar.gz'),
+            'lightconv.glu.wmt14.en-fr': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt14.en-fr.joined-dict.lightconv-glu.tar.gz'),
+            'dynamicconv.glu.wmt14.en-fr': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt14.en-fr.joined-dict.dynamicconv-glu.tar.gz'),
+            'lightconv.glu.wmt17.zh-en': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt17.zh-en.lightconv-glu.tar.gz'),
+            'dynamicconv.glu.wmt17.zh-en': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/dynamicconv/wmt17.zh-en.dynamicconv-glu.tar.gz'),
+        }
+        # fmt: on
 
     def __init__(self, encoder, decoder):
         super().__init__(encoder, decoder)
@@ -341,11 +366,11 @@ class LightConvDecoder(FairseqIncrementalDecoder):
         if self.normalize:
             self.layer_norm = LayerNorm(embed_dim)
 
-    def forward(self, prev_output_tokens, encoder_out=None, incremental_state=None):
+    def forward(self, prev_output_tokens, encoder_out=None, incremental_state=None, **kwargs):
         """
         Args:
             prev_output_tokens (LongTensor): previous decoder outputs of shape
-                `(batch, tgt_len)`, for input feeding/teacher forcing
+                `(batch, tgt_len)`, for teacher forcing
             encoder_out (Tensor, optional): output from the encoder, used for
                 encoder-side attention
             incremental_state (dict): dictionary used for storing state during
@@ -449,15 +474,15 @@ class LightConvEncoderLayer(nn.Module):
             self.linear1 = Linear(self.embed_dim, self.conv_dim)
             self.act = None
         if args.encoder_conv_type == 'lightweight':
-            self.conv = LightweightConv1dTBC(self.conv_dim, kernel_size, padding_l=padding_l,
-                                             weight_softmax=args.weight_softmax,
-                                             num_heads=args.encoder_attention_heads,
-                                             weight_dropout=args.weight_dropout)
+            self.conv = LightweightConv(self.conv_dim, kernel_size, padding_l=padding_l,
+                                        weight_softmax=args.weight_softmax,
+                                        num_heads=args.encoder_attention_heads,
+                                        weight_dropout=args.weight_dropout)
         elif args.encoder_conv_type == 'dynamic':
-            self.conv = DynamicConv1dTBC(self.conv_dim, kernel_size, padding_l=padding_l,
-                                         weight_softmax=args.weight_softmax,
-                                         num_heads=args.encoder_attention_heads,
-                                         weight_dropout=args.weight_dropout)
+            self.conv = DynamicConv(self.conv_dim, kernel_size, padding_l=padding_l,
+                                    weight_softmax=args.weight_softmax,
+                                    num_heads=args.encoder_attention_heads,
+                                    weight_dropout=args.weight_dropout)
         else:
             raise NotImplementedError
         self.linear2 = Linear(self.conv_dim, self.embed_dim)
@@ -537,15 +562,15 @@ class LightConvDecoderLayer(nn.Module):
             self.linear1 = Linear(self.embed_dim, self.conv_dim)
             self.act = None
         if args.decoder_conv_type == 'lightweight':
-            self.conv = LightweightConv1dTBC(self.conv_dim, kernel_size, padding_l=kernel_size-1,
-                                             weight_softmax=args.weight_softmax,
-                                             num_heads=args.decoder_attention_heads,
-                                             weight_dropout=args.weight_dropout)
+            self.conv = LightweightConv(self.conv_dim, kernel_size, padding_l=kernel_size-1,
+                                        weight_softmax=args.weight_softmax,
+                                        num_heads=args.decoder_attention_heads,
+                                        weight_dropout=args.weight_dropout)
         elif args.decoder_conv_type == 'dynamic':
-            self.conv = DynamicConv1dTBC(self.conv_dim, kernel_size, padding_l=kernel_size-1,
-                                         weight_softmax=args.weight_softmax,
-                                         num_heads=args.decoder_attention_heads,
-                                         weight_dropout=args.weight_dropout)
+            self.conv = DynamicConv(self.conv_dim, kernel_size, padding_l=kernel_size-1,
+                                    weight_softmax=args.weight_softmax,
+                                    num_heads=args.decoder_attention_heads,
+                                    weight_dropout=args.weight_dropout)
         else:
             raise NotImplementedError
         self.linear2 = Linear(self.conv_dim, self.embed_dim)

@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import torch
 import torch.nn as nn
@@ -24,9 +22,9 @@ class TransformerSentenceEncoderLayer(nn.Module):
 
     def __init__(
         self,
-        embedding_dim: float = 768,
-        ffn_embedding_dim: float = 3072,
-        num_attention_heads: float = 8,
+        embedding_dim: int = 768,
+        ffn_embedding_dim: int = 3072,
+        num_attention_heads: int = 8,
         dropout: float = 0.1,
         attention_dropout: float = 0.1,
         activation_dropout: float = 0.1,

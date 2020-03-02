@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import torch
 import torch.nn as nn
@@ -209,6 +207,7 @@ class LSTMEncoder(FairseqEncoder):
 
     def forward(self, src_tokens, src_lengths):
         if self.left_pad:
+            # nn.utils.rnn.pack_padded_sequence requires right-padding;
             # convert left-padding to right-padding
             src_tokens = utils.convert_padding_direction(
                 src_tokens,
@@ -282,9 +281,9 @@ class AttentionLayer(nn.Module):
 
     def forward(self, input, source_hids, encoder_padding_mask):
         # input: bsz x input_embed_dim
-        # source_hids: srclen x bsz x output_embed_dim
+        # source_hids: srclen x bsz x source_embed_dim
 
-        # x: bsz x output_embed_dim
+        # x: bsz x source_embed_dim
         x = self.input_proj(input)
 
         # compute attention
@@ -357,6 +356,17 @@ class LSTMDecoder(FairseqIncrementalDecoder):
             self.fc_out = Linear(out_embed_dim, num_embeddings, dropout=dropout_out)
 
     def forward(self, prev_output_tokens, encoder_out, incremental_state=None):
+        x, attn_scores = self.extract_features(
+            prev_output_tokens, encoder_out, incremental_state
+        )
+        return self.output_layer(x), attn_scores
+
+    def extract_features(
+        self, prev_output_tokens, encoder_out, incremental_state=None
+    ):
+        """
+        Similar to *forward* but only return features.
+        """
         encoder_padding_mask = encoder_out['encoder_padding_mask']
         encoder_out = encoder_out['encoder_out']
 
@@ -430,22 +440,25 @@ class LSTMDecoder(FairseqIncrementalDecoder):
         # T x B x C -> B x T x C
         x = x.transpose(1, 0)
 
+        if hasattr(self, 'additional_fc') and self.adaptive_softmax is None:
+            x = self.additional_fc(x)
+            x = F.dropout(x, p=self.dropout_out, training=self.training)
+
         # srclen x tgtlen x bsz -> bsz x tgtlen x srclen
         if not self.training and self.need_attn:
             attn_scores = attn_scores.transpose(0, 2)
         else:
             attn_scores = None
+        return x, attn_scores
 
-        # project back to size of vocabulary
+    def output_layer(self, x):
+        """Project features to the vocabulary size."""
         if self.adaptive_softmax is None:
-            if hasattr(self, 'additional_fc'):
-                x = self.additional_fc(x)
-                x = F.dropout(x, p=self.dropout_out, training=self.training)
             if self.share_input_output_embed:
                 x = F.linear(x, self.embed_tokens.weight)
             else:
                 x = self.fc_out(x)
-        return x, attn_scores
+        return x
 
     def reorder_incremental_state(self, incremental_state, new_order):
         super().reorder_incremental_state(incremental_state, new_order)

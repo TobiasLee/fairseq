@@ -1,14 +1,11 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 """
 Base classes for various fairseq models.
 """
 
-import os
 from typing import Dict, List, Optional
 
 import torch
@@ -16,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fairseq import utils
+from fairseq.checkpoint_utils import prune_state_dict
 from fairseq.data import Dictionary
 from fairseq.models import FairseqDecoder, FairseqEncoder
 
@@ -61,7 +59,7 @@ class BaseFairseqModel(nn.Module):
         """Maximum length supported by the model."""
         return None
 
-    def load_state_dict(self, state_dict, strict=True):
+    def load_state_dict(self, state_dict, strict=True, args=None):
         """Copies parameters and buffers from *state_dict* into this module and
         its descendants.
 
@@ -69,7 +67,8 @@ class BaseFairseqModel(nn.Module):
         this additionally "upgrades" *state_dicts* from old checkpoints.
         """
         self.upgrade_state_dict(state_dict)
-        return super().load_state_dict(state_dict, strict)
+        new_state_dict = prune_state_dict(state_dict, args)
+        return super().load_state_dict(new_state_dict, strict)
 
     def upgrade_state_dict(self, state_dict):
         """Upgrade old state dicts to work with newer code."""
@@ -144,17 +143,18 @@ class BaseFairseqModel(nn.Module):
         self.apply(apply_prepare_for_onnx_export_)
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path, checkpoint_file='model.pt', data_name_or_path=None, **kwargs):
+    def from_pretrained(cls, model_name_or_path, checkpoint_file='model.pt', data_name_or_path='.', **kwargs):
         """
         Load a :class:`~fairseq.models.FairseqModel` from a pre-trained model
         file. Downloads and caches the pre-trained model file if needed.
 
-        The base implementation returns a :class:`fairseq.hub_utils.Generator`,
-        which can be used to generate translations or sample from language
-        models. The underlying :class:`~fairseq.models.FairseqModel` can be
-        accessed via the *generator.models* attribute.
+        The base implementation returns a
+        :class:`~fairseq.hub_utils.GeneratorHubInterface`, which can be used to
+        generate translations or sample from language models. The underlying
+        :class:`~fairseq.models.FairseqModel` can be accessed via the
+        *generator.models* attribute.
 
-        Other models may override this to implement custom PyTorch Hub APIs.
+        Other models may override this to implement custom hub interfaces.
 
         Args:
             model_name_or_path (str): either the name of a pre-trained model to
@@ -165,40 +165,16 @@ class BaseFairseqModel(nn.Module):
                 at the given path/URL. Can start with '.' or './' to reuse the
                 model archive path.
         """
-        from fairseq import checkpoint_utils, file_utils, hub_utils
-
-        if hasattr(cls, 'hub_models'):
-            archive_map = cls.hub_models()
-            if model_name_or_path in archive_map:
-                model_name_or_path = archive_map[model_name_or_path]
-            if data_name_or_path is not None and data_name_or_path in archive_map:
-                data_name_or_path = archive_map[data_name_or_path]
-
-        model_path = file_utils.load_archive_file(model_name_or_path)
-
-        # convenience hack for loading data and BPE codes from model archive
-        if data_name_or_path is not None:
-            if data_name_or_path.startswith('.'):
-                kwargs['data'] = os.path.abspath(os.path.join(model_path, data_name_or_path))
-            else:
-                kwargs['data'] = file_utils.load_archive_file(data_name_or_path)
-        for file, arg in {
-            'code': 'bpe_codes',
-            'bpecodes': 'bpe_codes',
-            'sentencepiece.bpe.model': 'sentencepiece_vocab',
-        }.items():
-            path = os.path.join(model_path, file)
-            if os.path.exists(path):
-                kwargs[arg] = path
-
-        models, args, task = checkpoint_utils._load_model_ensemble(
-            [os.path.join(model_path, cpt) for cpt in checkpoint_file.split(':')],
-            arg_overrides=kwargs,
+        from fairseq import hub_utils
+        x = hub_utils.from_pretrained(
+            model_name_or_path,
+            checkpoint_file,
+            data_name_or_path,
+            archive_map=cls.hub_models(),
+            **kwargs,
         )
-
-        print(args)
-
-        return hub_utils.Generator(args, task, models)
+        print(x['args'])
+        return hub_utils.GeneratorHubInterface(x['args'], x['task'], x['models'])
 
     @classmethod
     def hub_models(cls):
@@ -226,8 +202,8 @@ class FairseqEncoderDecoderModel(BaseFairseqModel):
         Run the forward pass for an encoder-decoder model.
 
         First feed a batch of source tokens through the encoder. Then, feed the
-        encoder output and previous decoder outputs (i.e., input feeding/teacher
-        forcing) to the decoder to produce the next outputs::
+        encoder output and previous decoder outputs (i.e., teacher forcing) to
+        the decoder to produce the next outputs::
 
             encoder_out = self.encoder(src_tokens, src_lengths)
             return self.decoder(prev_output_tokens, encoder_out)
@@ -237,7 +213,7 @@ class FairseqEncoderDecoderModel(BaseFairseqModel):
                 `(batch, src_len)`
             src_lengths (LongTensor): source sentence lengths of shape `(batch)`
             prev_output_tokens (LongTensor): previous decoder outputs of shape
-                `(batch, tgt_len)`, for input feeding/teacher forcing
+                `(batch, tgt_len)`, for teacher forcing
 
         Returns:
             tuple:
@@ -247,6 +223,9 @@ class FairseqEncoderDecoderModel(BaseFairseqModel):
         encoder_out = self.encoder(src_tokens, src_lengths=src_lengths, **kwargs)
         decoder_out = self.decoder(prev_output_tokens, encoder_out=encoder_out, **kwargs)
         return decoder_out
+
+    def forward_decoder(self, prev_output_tokens, **kwargs):
+        return self.decoder(prev_output_tokens, **kwargs)
 
     def extract_features(self, src_tokens, src_lengths, prev_output_tokens, **kwargs):
         """
@@ -284,6 +263,7 @@ class FairseqModel(FairseqEncoderDecoderModel):
             stacklevel=4,
         )
 
+
 class FairseqMultiModel(BaseFairseqModel):
     """Base class for combining multiple encoder-decoder models."""
 
@@ -296,7 +276,7 @@ class FairseqMultiModel(BaseFairseqModel):
             assert isinstance(decoders[key], FairseqDecoder)
 
         self.models = nn.ModuleDict({
-            key: FairseqModel(encoders[key], decoders[key])
+            key: FairseqEncoderDecoderModel(encoders[key], decoders[key])
             for key in self.keys
         })
 
@@ -360,6 +340,19 @@ class FairseqMultiModel(BaseFairseqModel):
     def decoder(self):
         return self.models[self.keys[0]].decoder
 
+    def forward_decoder(self, prev_output_tokens, **kwargs):
+        return self.decoder(prev_output_tokens, **kwargs)
+
+    def load_state_dict(self, state_dict, strict=True, args=None):
+        """Copies parameters and buffers from *state_dict* into this module and
+        its descendants.
+
+        Overrides the method in :class:`nn.Module`. Compared with that method
+        this additionally "upgrades" *state_dicts* from old checkpoints.
+        """
+        self.upgrade_state_dict(state_dict)
+        new_state_dict = prune_state_dict(state_dict, args)
+        return super().load_state_dict(new_state_dict, strict)
 
 class FairseqLanguageModel(BaseFairseqModel):
     """Base class for decoder-only models.
@@ -390,6 +383,9 @@ class FairseqLanguageModel(BaseFairseqModel):
                 - a dictionary with any model-specific outputs
         """
         return self.decoder(src_tokens, **kwargs)
+
+    def forward_decoder(self, prev_output_tokens, **kwargs):
+        return self.decoder(prev_output_tokens, **kwargs)
 
     def extract_features(self, src_tokens, **kwargs):
         """

@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import math
 
@@ -12,10 +10,9 @@ import torch
 
 class FairseqOptimizer(object):
 
-    def __init__(self, args, params):
+    def __init__(self, args):
         super().__init__()
         self.args = args
-        self.params = list(params)
 
     @staticmethod
     def add_args(parser):
@@ -40,6 +37,16 @@ class FairseqOptimizer(object):
         different learning rate.
         """
         raise NotImplementedError
+
+    @property
+    def params(self):
+        """Return an iterable of the parameters held by the optimizer."""
+        for param_group in self.optimizer.param_groups:
+            for p in param_group['params']:
+                yield p
+
+    def __getstate__(self):
+        return self._optimizer.__getstate__()
 
     def get_lr(self):
         """Return the current learning rate."""
@@ -86,15 +93,21 @@ class FairseqOptimizer(object):
         else:
             return math.sqrt(sum(p.grad.data.norm()**2 for p in self.params if p.grad is not None))
 
+    def clip_grad_norm_by_name(self, max_norm):
+        """clip grad only on specific weights"""
+        if max_norm > 0:
+            return torch.nn.utils.clip_grad_norm_(self.params, max_norm)
+        else:
+            return math.sqrt(sum(p.grad.data.norm()**2 for p in self.params if p.grad is not None))
+
     def step(self, closure=None):
         """Performs a single optimization step."""
         self.optimizer.step(closure)
 
     def zero_grad(self):
         """Clears the gradients of all optimized parameters."""
-        for group in self.optimizer.param_groups:
-            for p in group['params']:
-                p.grad = None
+        for p in self.params:
+            p.grad = None
         self.optimizer.zero_grad()
 
     @property
@@ -102,3 +115,6 @@ class FairseqOptimizer(object):
         if hasattr(self.optimizer, 'supports_memory_efficient_fp16'):
             return self.optimizer.supports_memory_efficient_fp16
         return False
+
+    def average_params(self):
+        pass

@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import argparse
 import unittest
@@ -14,6 +12,7 @@ from fairseq.optim.adam import FairseqAdam
 from fairseq.optim.fp16_optimizer import MemoryEfficientFP16Optimizer
 
 
+@unittest.skipIf(not torch.cuda.is_available(), 'test requires a GPU')
 class TestMemoryEfficientFP16(unittest.TestCase):
 
     def test_load_state_dict(self):
@@ -37,6 +36,7 @@ class TestMemoryEfficientFP16(unittest.TestCase):
                 fp16_scale_window=1,
                 fp16_scale_tolerance=1,
                 threshold_loss_scale=1,
+                min_loss_scale=1e-4,
             ),
             params,
             optimizer,

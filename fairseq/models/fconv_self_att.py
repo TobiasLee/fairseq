@@ -1,11 +1,10 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import math
+import os
 
 import torch
 import torch.nn as nn
@@ -35,7 +34,18 @@ class FConvModelSelfAtt(FairseqEncoderDecoderModel):
     @classmethod
     def hub_models(cls):
         return {
-            'conv.stories': 'https://dl.fbaipublicfiles.com/fairseq/models/stories_checkpoint.tar.bz2',
+            'conv.stories.pretrained': {
+                'path': 'https://dl.fbaipublicfiles.com/fairseq/models/stories_checkpoint.tar.gz',
+                'checkpoint_file': 'pretrained_checkpoint.pt',
+                'tokenizer': 'nltk',
+            },
+            'conv.stories': {
+                'path': 'https://dl.fbaipublicfiles.com/fairseq/models/stories_checkpoint.tar.gz',
+                'checkpoint_file': 'fusion_checkpoint.pt',
+                'tokenizer': 'nltk',
+                'pretrained': 'True',
+                'pretrained_checkpoint': './pretrained_checkpoint.pt',
+            },
             # Test set containing dictionaries
             'data.stories': 'https://dl.fbaipublicfiles.com/fairseq/data/stories_test.tar.bz2',
         }
@@ -99,6 +109,10 @@ class FConvModelSelfAtt(FairseqEncoderDecoderModel):
         pretrained = eval(args.pretrained)
         if pretrained:
             print("| loading pretrained model")
+            if not os.path.exists(args.pretrained_checkpoint):
+                new_pretrained_checkpoint = os.path.join(args.data, args.pretrained_checkpoint)
+                if os.path.exists(new_pretrained_checkpoint):
+                    args.pretrained_checkpoint = new_pretrained_checkpoint
             trained_model = checkpoint_utils.load_model_ensemble(
                 filenames=[args.pretrained_checkpoint],
                 task=task,

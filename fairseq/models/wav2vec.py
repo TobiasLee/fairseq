@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import sys
 
@@ -189,7 +187,7 @@ class Wav2VecModel(BaseFairseqModel):
         return result
 
     def upgrade_state_dict_named(self, state_dict, name):
-        return state_dict
+        super().upgrade_state_dict_named(state_dict, name)
 
     def max_positions(self):
         """Maximum length supported by the model."""
@@ -353,7 +351,7 @@ class ConvAggegator(nn.Module):
             residual = x
             x = conv(x)
             if self.skip_connections:
-                if rproj != None:
+                if rproj is not None:
                     residual = rproj(residual)
                 x = (x + residual) * self.residual_scale
         return x
