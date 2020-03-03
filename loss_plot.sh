@@ -1,8 +1,8 @@
 ARCH=transformer_iwslt_de_en
-DATA_PATH=data-bin/iwslt14.tokenized.de-en-joined
+DATA_PATH=data-bin/iwslt14.tokenized.de-en.joined
 export PYTHONPATH=$PYTHONPATH:./plot/
 LR=0.0005
-GPU=0
+GPU=1
 WU=4000 
 
 for SEED in 1234 
@@ -10,18 +10,22 @@ do
 
 echo "seed=$SEED"
 echo "warm up updates=$WU"
-OUTPUT_PATH=checkpoints/IWSLT/pre-norm-with-wu-${LR}-seed$SEED
-RESULT_PATH=results/IWSLT/pre-norm-with-wu-${LR}-seed$SEED
+OUTPUT_PATH=checkpoints/IWSLT/post-norm-with-wu-${LR}-seed$SEED
+#OUTPUT_PATH=checkpoints/deen_transformer_fp_822
+RESULT_PATH=results/IWSLT/post-norm-with-wu-${LR}-seed$SEED
+#RESULT_PATH=results/IWSLT/zgx-deen-${LR}-seed$SEED
 
 mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
 echo "cleaning h5 file"
-rm $OUTPUT_PATH/*.h5
+# rm $OUTPUT_PATH/*.h5
+
+#--encoder-normalize-before --decoder-normalize-before \
 CUDA_VISIBLE_DEVICES=$GPU   python3 trans_plot.py   $DATA_PATH  \
-    --dir-type weights --xnorm filter --xignore biasbn --ynorm filter --yignore biasbn  --plot \
-    --x=-1:1:51 --y=-1:1:51 --ngpu 4\
-    --seed $SEED --model-file $OUTPUT_PATH/checkpoint_last.pt \
-    -a $ARCH  --share-all-embeddings  --encoder-normalize-before --decoder-normalize-before \
+    --dir-type weights --xnorm filter --xignore biasbn --ynorm filter --yignore biasbn  --plot\
+    --x=-1:1:51 --y=-1:1:51 --ngpu 1 --valid-subset valid\
+    --seed $SEED --model-file $OUTPUT_PATH/checkpoint_best.pt  \
+    -a $ARCH  --share-all-embeddings \
     --optimizer adam --lr $LR \
     -s de -t en \
     --clip-norm 0.0 \
