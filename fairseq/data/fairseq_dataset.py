@@ -1,14 +1,21 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
+import numpy as np
 import torch.utils.data
 
 
-class FairseqDataset(torch.utils.data.Dataset):
+class EpochListening:
+    """Mixin for receiving updates whenever the epoch increments."""
+    def set_epoch(self, epoch):
+        """Will receive the updated epoch number at the beginning of the epoch.
+        """
+        pass
+
+
+class FairseqDataset(torch.utils.data.Dataset, EpochListening):
     """A dataset that provides helpers for batching."""
 
     def __getitem__(self, index):
@@ -41,13 +48,25 @@ class FairseqDataset(torch.utils.data.Dataset):
     def ordered_indices(self):
         """Return an ordered list of indices. Batches will be constructed based
         on this order."""
-        raise NotImplementedError
+        return np.arange(len(self))
 
     @property
     def supports_prefetch(self):
         """Whether this dataset supports prefetching."""
         return False
 
+    def attr(self, attr: str, index: int):
+        return getattr(self, attr, None)
+
     def prefetch(self, indices):
         """Prefetch the data required for this epoch."""
+        raise NotImplementedError
+
+
+class FairseqIterableDataset(torch.utils.data.IterableDataset, EpochListening):
+    """For datasets that need to be read sequentially, usually because the data
+    is being streamed or otherwise can't be manipulated on a single machine.
+    """
+
+    def __iter__(self):
         raise NotImplementedError

@@ -1,12 +1,11 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 
 from . import FairseqDataset
+import torch
 from typing import Optional
 
 
@@ -49,14 +48,27 @@ class TransformEosLangPairDataset(FairseqDataset):
     def collater(self, samples):
         samples = self.dataset.collater(samples)
 
-        # TODO: support different padding direction
         if self.new_src_eos is not None:
-            assert(samples['net_input']['src_tokens'][:, -1] != self.src_eos).sum() == 0
-            samples['net_input']['src_tokens'][:, -1] = self.new_src_eos
+            if self.dataset.left_pad_source:
+                assert(samples['net_input']['src_tokens'][:, -1] != self.src_eos).sum() == 0
+                samples['net_input']['src_tokens'][:, -1] = self.new_src_eos
+            else:
+                eos_idx = samples['net_input']['src_lengths'] - 1
+                assert(
+                    samples['net_input']['src_tokens'][torch.arange(eos_idx.size(0)), eos_idx] != self.src_eos
+                ).sum() == 0
+                eos_idx = eos_idx.resize_(len(samples['net_input']['src_lengths']), 1)
+                samples['net_input']['src_tokens'].scatter_(1, eos_idx, self.new_src_eos)
 
-        if self.new_tgt_bos is not None:
-            assert (samples['net_input']['prev_output_tokens'][:, 0] != self.tgt_bos).sum() == 0
-            samples['net_input']['prev_output_tokens'][:, 0] = self.new_tgt_bos
+        if self.new_tgt_bos is not None and 'prev_output_tokens' in samples['net_input']:
+            if self.dataset.left_pad_target:
+                # TODO: support different padding direction on target side
+                raise NotImplementedError(
+                    'TransformEosLangPairDataset does not implement --left-pad-target True option'
+                )
+            else:
+                assert (samples['net_input']['prev_output_tokens'][:, 0] != self.tgt_bos).sum() == 0
+                samples['net_input']['prev_output_tokens'][:, 0] = self.new_tgt_bos
 
         return samples
 

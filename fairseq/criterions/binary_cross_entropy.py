@@ -1,11 +1,10 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import math
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -20,7 +19,7 @@ class BinaryCrossEntropyCriterion(FairseqCriterion):
     def __init__(self, args, task):
         super().__init__(args, task)
 
-    def forward(self, model, sample, reduce=True):
+    def forward(self, model, sample, reduce=True, log_pred=False):
         """Compute the loss for the given sample.
 
         Returns a tuple with three elements:
@@ -53,6 +52,9 @@ class BinaryCrossEntropyCriterion(FairseqCriterion):
             'nsentences': logits.size(0),
             'sample_size': sample_size,
         }
+        if log_pred:
+            logging_output['logits'] = logits.cpu().numpy()
+            logging_output['target'] = target.cpu().numpy()
         return loss, sample_size, logging_output
 
     @staticmethod
@@ -70,4 +72,12 @@ class BinaryCrossEntropyCriterion(FairseqCriterion):
         }
         if sample_size != ntokens:
             agg_output['nll_loss'] = loss_sum / ntokens / math.log(2)
+        for key in ["logits", "target"]:
+            if key in logging_outputs[0]:
+                if len(logging_outputs) == 1:
+                    agg_output[key] = logging_outputs[0][key]  # avoid copying
+                else:
+                    agg_output[key] = np.concatenate(
+                        [log[key] for log in logging_outputs]
+                    )
         return agg_output

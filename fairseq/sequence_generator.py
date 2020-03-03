@@ -1,15 +1,14 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import math
 
 import torch
 
 from fairseq import search, utils
+from fairseq.data import data_utils
 from fairseq.models import FairseqIncrementalDecoder
 
 
@@ -21,18 +20,14 @@ class SequenceGenerator(object):
         max_len_a=0,
         max_len_b=200,
         min_len=1,
-        stop_early=True,
         normalize_scores=True,
         len_penalty=1.,
         unk_penalty=0.,
         retain_dropout=False,
-        sampling=False,
-        sampling_topk=-1,
         temperature=1.,
-        diverse_beam_groups=-1,
-        diverse_beam_strength=0.5,
         match_source_len=False,
         no_repeat_ngram_size=0,
+        search_strategy=None,
     ):
         """Generates translations of a given source sentence.
 
@@ -43,9 +38,6 @@ class SequenceGenerator(object):
                 ax + b, where x is the source length
             min_len (int, optional): the minimum length of the generated output
                 (not including end-of-sentence)
-            stop_early (bool, optional): stop generation immediately after we
-                finalize beam_size hypotheses, even though longer hypotheses
-                might have better normalized scores (default: True)
             normalize_scores (bool, optional): normalize scores by the length
                 of the output (default: True)
             len_penalty (float, optional): length penalty, where <1.0 favors
@@ -54,15 +46,9 @@ class SequenceGenerator(object):
                 produces more unks, >0 produces fewer (default: 0.0)
             retain_dropout (bool, optional): use dropout when generating
                 (default: False)
-            sampling (bool, optional): sample outputs instead of beam search
-                (default: False)
-            sampling_topk (int, optional): only sample among the top-k choices
-                at each step (default: -1)
             temperature (float, optional): temperature, where values
                 >1.0 produce more uniform samples and values <1.0 produce
                 sharper samples (default: 1.0)
-            diverse_beam_groups/strength (float, optional): parameters for
-                Diverse Beam Search sampling
             match_source_len (bool, optional): outputs should match the source
                 length (default: False)
         """
@@ -76,7 +62,6 @@ class SequenceGenerator(object):
         self.max_len_a = max_len_a
         self.max_len_b = max_len_b
         self.min_len = min_len
-        self.stop_early = stop_early
         self.normalize_scores = normalize_scores
         self.len_penalty = len_penalty
         self.unk_penalty = unk_penalty
@@ -84,30 +69,15 @@ class SequenceGenerator(object):
         self.temperature = temperature
         self.match_source_len = match_source_len
         self.no_repeat_ngram_size = no_repeat_ngram_size
-
-        assert sampling_topk < 0 or sampling, '--sampling-topk requires --sampling'
         assert temperature > 0, '--temperature must be greater than 0'
 
-        if sampling:
-            self.search = search.Sampling(tgt_dict, sampling_topk)
-        elif diverse_beam_groups > 0:
-            self.search = search.DiverseBeamSearch(tgt_dict, diverse_beam_groups, diverse_beam_strength)
-        elif match_source_len:
-            self.search = search.LengthConstrainedBeamSearch(
-                tgt_dict, min_len_a=1, min_len_b=0, max_len_a=1, max_len_b=0,
-            )
-        else:
-            self.search = search.BeamSearch(tgt_dict)
+        self.search = (
+            search.BeamSearch(tgt_dict) if search_strategy is None else search_strategy
+        )
+
 
     @torch.no_grad()
-    def generate(
-        self,
-        models,
-        sample,
-        prefix_tokens=None,
-        bos_token=None,
-        **kwargs
-    ):
+    def generate(self, models, sample, **kwargs):
         """Generate a batch of translations.
 
         Args:
@@ -115,8 +85,21 @@ class SequenceGenerator(object):
             sample (dict): batch
             prefix_tokens (torch.LongTensor, optional): force decoder to begin
                 with these tokens
+            bos_token (int, optional): beginning of sentence token
+                (default: self.eos)
         """
         model = EnsembleModel(models)
+        return self._generate(model, sample, **kwargs)
+
+    @torch.no_grad()
+    def _generate(
+        self,
+        model,
+        sample,
+        prefix_tokens=None,
+        bos_token=None,
+        **kwargs
+    ):
         if not self.retain_dropout:
             model.eval()
 
@@ -143,6 +126,7 @@ class SequenceGenerator(object):
                 # exclude the EOS marker
                 model.max_decoder_positions() - 1,
             )
+        assert self.min_len <= max_len, 'min_len cannot be larger than max_len, please adjust these!'
 
         # compute the encoder output for each beam
         encoder_outs = model.forward_encoder(encoder_input)
@@ -153,18 +137,20 @@ class SequenceGenerator(object):
         # initialize buffers
         scores = src_tokens.new(bsz * beam_size, max_len + 1).float().fill_(0)
         scores_buf = scores.clone()
-        tokens = src_tokens.data.new(bsz * beam_size, max_len + 2).long().fill_(self.pad)
+        tokens = src_tokens.new(bsz * beam_size, max_len + 2).long().fill_(self.pad)
         tokens_buf = tokens.clone()
-        tokens[:, 0] = bos_token or self.eos
+        tokens[:, 0] = self.eos if bos_token is None else bos_token
         attn, attn_buf = None, None
-        nonpad_idxs = None
-        if prefix_tokens is not None:
-            partial_prefix_mask_buf = torch.zeros_like(src_lengths).byte()
+
+        # The blacklist indicates candidates that should be ignored.
+        # For example, suppose we're sampling and have already finalized 2/5
+        # samples. Then the blacklist would mark 2 positions as being ignored,
+        # so that we only finalize the remaining 3 samples.
+        blacklist = src_tokens.new_zeros(bsz, beam_size).eq(-1)  # forward and backward-compatible False mask
 
         # list of completed sentences
         finalized = [[] for i in range(bsz)]
         finished = [False for i in range(bsz)]
-        worst_finalized = [{'idx': None, 'score': -math.inf} for i in range(bsz)]
         num_remaining_sent = bsz
 
         # number of candidate hypos per step
@@ -182,26 +168,18 @@ class SequenceGenerator(object):
                 buffers[name] = type_of.new()
             return buffers[name]
 
-        def is_finished(sent, step, unfin_idx, unfinalized_scores=None):
+        def is_finished(sent, step, unfin_idx):
             """
             Check whether we've finished generation for a given sentence, by
             comparing the worst score among finalized hypotheses to the best
             possible score among unfinalized hypotheses.
             """
             assert len(finalized[sent]) <= beam_size
-            if len(finalized[sent]) == beam_size:
-                if self.stop_early or step == max_len or unfinalized_scores is None:
-                    return True
-                # stop if the best unfinalized score is worse than the worst
-                # finalized one
-                best_unfinalized_score = unfinalized_scores[unfin_idx].max()
-                if self.normalize_scores:
-                    best_unfinalized_score /= max_len ** self.len_penalty
-                if worst_finalized[sent]['score'] >= best_unfinalized_score:
-                    return True
+            if len(finalized[sent]) == beam_size or step == max_len:
+                return True
             return False
 
-        def finalize_hypos(step, bbsz_idx, eos_scores, unfinalized_scores=None):
+        def finalize_hypos(step, bbsz_idx, eos_scores):
             """
             Finalize the given hypotheses at this step, while keeping the total
             number of finalized hypotheses per sentence <= beam_size.
@@ -216,14 +194,13 @@ class SequenceGenerator(object):
                     indicating which hypotheses to finalize
                 eos_scores: A vector of the same size as bbsz_idx containing
                     scores for each hypothesis
-                unfinalized_scores: A vector containing scores for all
-                    unfinalized hypotheses
             """
             assert bbsz_idx.numel() == eos_scores.numel()
 
             # clone relevant token and attention tensors
             tokens_clone = tokens.index_select(0, bbsz_idx)
             tokens_clone = tokens_clone[:, 1:step + 2]  # skip the first index, which is EOS
+            assert not tokens_clone.eq(self.eos).any()
             tokens_clone[:, step] = self.eos
             attn_clone = attn.index_select(0, bbsz_idx)[:, :, 1:step+2] if attn is not None else None
 
@@ -259,39 +236,25 @@ class SequenceGenerator(object):
 
                     if attn_clone is not None:
                         # remove padding tokens from attn scores
-                        hypo_attn = attn_clone[i][nonpad_idxs[sent]]
-                        _, alignment = hypo_attn.max(dim=0)
+                        hypo_attn = attn_clone[i]
                     else:
                         hypo_attn = None
-                        alignment = None
 
                     return {
                         'tokens': tokens_clone[i],
                         'score': score,
                         'attention': hypo_attn,  # src_len x tgt_len
-                        'alignment': alignment,
+                        'alignment': None,
                         'positional_scores': pos_scores[i],
                     }
 
                 if len(finalized[sent]) < beam_size:
                     finalized[sent].append(get_hypo())
-                elif not self.stop_early and score > worst_finalized[sent]['score']:
-                    # replace worst hypo for this sentence with new/better one
-                    worst_idx = worst_finalized[sent]['idx']
-                    if worst_idx is not None:
-                        finalized[sent][worst_idx] = get_hypo()
-
-                    # find new worst finalized hypo for this sentence
-                    idx, s = min(enumerate(finalized[sent]), key=lambda r: r[1]['score'])
-                    worst_finalized[sent] = {
-                        'score': s['score'],
-                        'idx': idx,
-                    }
 
             newly_finished = []
             for sent, unfin_idx in sents_seen:
                 # check termination conditions for this sentence
-                if not finished[sent] and is_finished(sent, step, unfin_idx, unfinalized_scores):
+                if not finished[sent] and is_finished(sent, step, unfin_idx):
                     finished[sent] = True
                     newly_finished.append(unfin_idx)
             return newly_finished
@@ -315,6 +278,43 @@ class SequenceGenerator(object):
             lprobs[:, self.pad] = -math.inf  # never select pad
             lprobs[:, self.unk] -= self.unk_penalty  # apply unk penalty
 
+            # handle max length constraint
+            if step >= max_len:
+                lprobs[:, :self.eos] = -math.inf
+                lprobs[:, self.eos + 1:] = -math.inf
+
+            # handle prefix tokens (possibly with different lengths)
+            if prefix_tokens is not None and step < prefix_tokens.size(1) and step < max_len:
+                prefix_toks = prefix_tokens[:, step].unsqueeze(-1).repeat(1, beam_size).view(-1)
+                prefix_lprobs = lprobs.gather(-1, prefix_toks.unsqueeze(-1))
+                prefix_mask = prefix_toks.ne(self.pad)
+                lprobs[prefix_mask] = -math.inf
+                lprobs[prefix_mask] = lprobs[prefix_mask].scatter_(
+                    -1, prefix_toks[prefix_mask].unsqueeze(-1), prefix_lprobs[prefix_mask]
+                )
+                # if prefix includes eos, then we should make sure tokens and
+                # scores are the same across all beams
+                eos_mask = prefix_toks.eq(self.eos)
+                if eos_mask.any():
+                    # validate that the first beam matches the prefix
+                    first_beam = tokens[eos_mask].view(-1, beam_size, tokens.size(-1))[:, 0, 1:step + 1]
+                    eos_mask_batch_dim = eos_mask.view(-1, beam_size)[:, 0]
+                    target_prefix = prefix_tokens[eos_mask_batch_dim][:, :step]
+                    assert (first_beam == target_prefix).all()
+
+                    def replicate_first_beam(tensor, mask):
+                        tensor = tensor.view(-1, beam_size, tensor.size(-1))
+                        tensor[mask] = tensor[mask][:, :1, :]
+                        return tensor.view(-1, tensor.size(-1))
+
+                    # copy tokens, scores and lprobs from the first beam to all beams
+                    tokens = replicate_first_beam(tokens, eos_mask_batch_dim)
+                    scores = replicate_first_beam(scores, eos_mask_batch_dim)
+                    lprobs = replicate_first_beam(lprobs, eos_mask_batch_dim)
+            elif step < self.min_len:
+                # minimum length constraint (does not apply if using prefix_tokens)
+                lprobs[:, self.eos] = -math.inf
+
             if self.no_repeat_ngram_size > 0:
                 # for each beam and batch sentence, generate a list of previous ngrams
                 gen_ngrams = [{} for bbsz_idx in range(bsz * beam_size)]
@@ -329,112 +329,62 @@ class SequenceGenerator(object):
                 if attn is None:
                     attn = scores.new(bsz * beam_size, src_tokens.size(1), max_len + 2)
                     attn_buf = attn.clone()
-                    nonpad_idxs = src_tokens.ne(self.pad)
                 attn[:, :, step + 1].copy_(avg_attn_scores)
 
             scores = scores.type_as(lprobs)
             scores_buf = scores_buf.type_as(lprobs)
             eos_bbsz_idx = buffer('eos_bbsz_idx')
             eos_scores = buffer('eos_scores', type_of=scores)
-            if step < max_len:
-                self.search.set_src_lengths(src_lengths)
 
-                if self.no_repeat_ngram_size > 0:
-                    def calculate_banned_tokens(bbsz_idx):
-                        # before decoding the next token, prevent decoding of ngrams that have already appeared
-                        ngram_index = tuple(tokens[bbsz_idx, step + 2 - self.no_repeat_ngram_size:step + 1].tolist())
-                        return gen_ngrams[bbsz_idx].get(ngram_index, [])
+            self.search.set_src_lengths(src_lengths)
 
-                    if step + 2 - self.no_repeat_ngram_size >= 0:
-                        # no banned tokens if we haven't generated no_repeat_ngram_size tokens yet
-                        banned_tokens = [calculate_banned_tokens(bbsz_idx) for bbsz_idx in range(bsz * beam_size)]
-                    else:
-                        banned_tokens = [[] for bbsz_idx in range(bsz * beam_size)]
+            if self.no_repeat_ngram_size > 0:
+                def calculate_banned_tokens(bbsz_idx):
+                    # before decoding the next token, prevent decoding of ngrams that have already appeared
+                    ngram_index = tuple(tokens[bbsz_idx, step + 2 - self.no_repeat_ngram_size:step + 1].tolist())
+                    return gen_ngrams[bbsz_idx].get(ngram_index, [])
 
-                    for bbsz_idx in range(bsz * beam_size):
-                        lprobs[bbsz_idx, banned_tokens[bbsz_idx]] = -math.inf
-
-                if prefix_tokens is not None and step < prefix_tokens.size(1):
-                    assert isinstance(self.search, search.BeamSearch) or bsz == 1, \
-                            "currently only BeamSearch supports decoding with prefix_tokens"
-                    probs_slice = lprobs.view(bsz, -1, lprobs.size(-1))[:, 0, :]
-                    cand_scores = torch.gather(
-                        probs_slice, dim=1,
-                        index=prefix_tokens[:, step].view(-1, 1)
-                    ).view(-1, 1).repeat(1, cand_size)
-                    if step > 0:
-                        # save cumulative scores for each hypothesis
-                        cand_scores.add_(scores[:, step - 1].view(bsz, beam_size).repeat(1, 2))
-                    cand_indices = prefix_tokens[:, step].view(-1, 1).repeat(1, cand_size)
-                    cand_beams = torch.zeros_like(cand_indices)
-
-                # handle prefixes of different lengths
-                # when step == prefix_tokens.size(1), we'll have new free-decoding batches
-                if prefix_tokens is not None and step <= prefix_tokens.size(1):
-                    if step < prefix_tokens.size(1):
-                        partial_prefix_mask = prefix_tokens[:, step].eq(self.pad)
-                    else:   #  all prefixes finished force-decoding
-                        partial_prefix_mask = torch.ones(bsz).to(prefix_tokens).byte()
-                    if partial_prefix_mask.any():
-                        # track new free-decoding batches, at whose very first step
-                        # only use the first beam to eliminate repeats
-                        prefix_step0_mask = partial_prefix_mask ^ partial_prefix_mask_buf
-                        lprobs.view(bsz, beam_size, -1)[prefix_step0_mask, 1:] = -math.inf
-                        partial_scores, partial_indices, partial_beams = self.search.step(
-                            step,
-                            lprobs.view(bsz, -1, self.vocab_size),
-                            scores.view(bsz, beam_size, -1)[:, :, :step],
-                        )
-                        cand_scores[partial_prefix_mask] = partial_scores[partial_prefix_mask]
-                        cand_indices[partial_prefix_mask] = partial_indices[partial_prefix_mask]
-                        cand_beams[partial_prefix_mask] = partial_beams[partial_prefix_mask]
-                        partial_prefix_mask_buf = partial_prefix_mask
-
+                if step + 2 - self.no_repeat_ngram_size >= 0:
+                    # no banned tokens if we haven't generated no_repeat_ngram_size tokens yet
+                    banned_tokens = [calculate_banned_tokens(bbsz_idx) for bbsz_idx in range(bsz * beam_size)]
                 else:
-                    cand_scores, cand_indices, cand_beams = self.search.step(
-                        step,
-                        lprobs.view(bsz, -1, self.vocab_size),
-                        scores.view(bsz, beam_size, -1)[:, :, :step],
-                    )
-            else:
-                # make probs contain cumulative scores for each hypothesis
-                lprobs.add_(scores[:, step - 1].unsqueeze(-1))
+                    banned_tokens = [[] for bbsz_idx in range(bsz * beam_size)]
 
-                # finalize all active hypotheses once we hit max_len
-                # pick the hypothesis with the highest prob of EOS right now
-                torch.sort(
-                    lprobs[:, self.eos],
-                    descending=True,
-                    out=(eos_scores, eos_bbsz_idx),
-                )
-                num_remaining_sent -= len(finalize_hypos(step, eos_bbsz_idx, eos_scores))
-                assert num_remaining_sent == 0
-                break
+                for bbsz_idx in range(bsz * beam_size):
+                    lprobs[bbsz_idx, banned_tokens[bbsz_idx]] = -math.inf
+
+            cand_scores, cand_indices, cand_beams = self.search.step(
+                step,
+                lprobs.view(bsz, -1, self.vocab_size),
+                scores.view(bsz, beam_size, -1)[:, :, :step],
+            )
 
             # cand_bbsz_idx contains beam indices for the top candidate
             # hypotheses, with a range of values: [0, bsz*beam_size),
             # and dimensions: [bsz, cand_size]
             cand_bbsz_idx = cand_beams.add(bbsz_offsets)
 
-            # finalize hypotheses that end in eos
-            eos_mask = cand_indices.eq(self.eos)
+            # finalize hypotheses that end in eos, except for blacklisted ones
+            # or candidates with a score of -inf
+            eos_mask = cand_indices.eq(self.eos) & cand_scores.ne(-math.inf)
+            eos_mask[:, :beam_size][blacklist] = 0
+
+            # only consider eos when it's among the top beam_size indices
+            torch.masked_select(
+                cand_bbsz_idx[:, :beam_size],
+                mask=eos_mask[:, :beam_size],
+                out=eos_bbsz_idx,
+            )
 
             finalized_sents = set()
-            if step >= self.min_len:
-                # only consider eos when it's among the top beam_size indices
+            if eos_bbsz_idx.numel() > 0:
                 torch.masked_select(
-                    cand_bbsz_idx[:, :beam_size],
+                    cand_scores[:, :beam_size],
                     mask=eos_mask[:, :beam_size],
-                    out=eos_bbsz_idx,
+                    out=eos_scores,
                 )
-                if eos_bbsz_idx.numel() > 0:
-                    torch.masked_select(
-                        cand_scores[:, :beam_size],
-                        mask=eos_mask[:, :beam_size],
-                        out=eos_scores,
-                    )
-                    finalized_sents = finalize_hypos(step, eos_bbsz_idx, eos_scores, cand_scores)
-                    num_remaining_sent -= len(finalized_sents)
+                finalized_sents = finalize_hypos(step, eos_bbsz_idx, eos_scores)
+                num_remaining_sent -= len(finalized_sents)
 
             assert num_remaining_sent >= 0
             if num_remaining_sent == 0:
@@ -457,8 +407,8 @@ class SequenceGenerator(object):
                 cand_indices = cand_indices[batch_idxs]
                 if prefix_tokens is not None:
                     prefix_tokens = prefix_tokens[batch_idxs]
-                    partial_prefix_mask_buf = partial_prefix_mask_buf[batch_idxs]
                 src_lengths = src_lengths[batch_idxs]
+                blacklist = blacklist[batch_idxs]
 
                 scores = scores.view(bsz, -1)[batch_idxs].view(new_bsz * beam_size, -1)
                 scores_buf.resize_as_(scores)
@@ -471,10 +421,12 @@ class SequenceGenerator(object):
             else:
                 batch_idxs = None
 
-            # set active_mask so that values > cand_size indicate eos hypos
-            # and values < cand_size indicate candidate active hypos.
-            # After, the min values per row are the top candidate active hypos
+            # Set active_mask so that values > cand_size indicate eos or
+            # blacklisted hypos and values < cand_size indicate candidate
+            # active hypos. After this, the min values per row are the top
+            # candidate active hypos.
             active_mask = buffer('active_mask')
+            eos_mask[:, :beam_size] |= blacklist
             torch.add(
                 eos_mask.type_as(cand_offsets) * cand_size,
                 cand_offsets[:eos_mask.size(1)],
@@ -483,11 +435,15 @@ class SequenceGenerator(object):
 
             # get the top beam_size active hypotheses, which are just the hypos
             # with the smallest values in active_mask
-            active_hypos, _ignore = buffer('active_hypos'), buffer('_ignore')
+            active_hypos, new_blacklist = buffer('active_hypos'), buffer('new_blacklist')
             torch.topk(
                 active_mask, k=beam_size, dim=1, largest=False,
-                out=(_ignore, active_hypos)
+                out=(new_blacklist, active_hypos)
             )
+
+            # update blacklist to ignore any finalized hypos
+            blacklist = new_blacklist.ge(cand_size)[:, :beam_size]
+            assert (~blacklist).any(dim=1).all()
 
             active_bbsz_idx = buffer('active_bbsz_idx')
             torch.gather(
@@ -540,7 +496,6 @@ class SequenceGenerator(object):
         # sort by score descending
         for sent in range(len(finalized)):
             finalized[sent] = sorted(finalized[sent], key=lambda r: r['score'], reverse=True)
-
         return finalized
 
 
@@ -605,18 +560,18 @@ class EnsembleModel(torch.nn.Module):
         temperature=1.,
     ):
         if self.incremental_states is not None:
-            decoder_out = list(model.decoder(tokens, encoder_out, incremental_state=self.incremental_states[model]))
+            decoder_out = list(model.forward_decoder(
+                tokens, encoder_out=encoder_out, incremental_state=self.incremental_states[model],
+            ))
         else:
-            decoder_out = list(model.decoder(tokens, encoder_out))
+            decoder_out = list(model.forward_decoder(tokens, encoder_out=encoder_out))
         decoder_out[0] = decoder_out[0][:, -1:, :]
         if temperature != 1.:
             decoder_out[0].div_(temperature)
         attn = decoder_out[1]
         if type(attn) is dict:
-            attn = attn['attn']
+            attn = attn.get('attn', None)
         if attn is not None:
-            if type(attn) is dict:
-                attn = attn['attn']
             attn = attn[:, -1, :]
         probs = model.get_normalized_probs(decoder_out, log_probs=log_probs)
         probs = probs[:, -1, :]
@@ -635,3 +590,104 @@ class EnsembleModel(torch.nn.Module):
             return
         for model in self.models:
             model.decoder.reorder_incremental_state(self.incremental_states[model], new_order)
+
+
+class SequenceGeneratorWithAlignment(SequenceGenerator):
+
+    def __init__(self, tgt_dict, left_pad_target=False, **kwargs):
+        """Generates translations of a given source sentence.
+
+        Produces alignments following "Jointly Learning to Align and
+        Translate with Transformer Models" (Garg et al., EMNLP 2019).
+
+        Args:
+            left_pad_target (bool, optional): Whether or not the
+                hypothesis should be left padded or not when they are
+                teacher forced for generating alignments.
+        """
+        super().__init__(tgt_dict, **kwargs)
+        self.left_pad_target = left_pad_target
+
+    @torch.no_grad()
+    def generate(self, models, sample, **kwargs):
+        model = EnsembleModelWithAlignment(models)
+        finalized = super()._generate(model, sample, **kwargs)
+
+        src_tokens = sample['net_input']['src_tokens']
+        bsz = src_tokens.shape[0]
+        beam_size = self.beam_size
+        src_tokens, src_lengths, prev_output_tokens, tgt_tokens = \
+            self._prepare_batch_for_alignment(sample, finalized)
+        if any(getattr(m, 'full_context_alignment', False) for m in model.models):
+            attn = model.forward_align(src_tokens, src_lengths, prev_output_tokens)
+        else:
+            attn = [
+                finalized[i // beam_size][i % beam_size]['attention'].transpose(1, 0)
+                for i in range(bsz * beam_size)
+            ]
+
+        # Process the attn matrix to extract hard alignments.
+        for i in range(bsz * beam_size):
+            alignment = utils.extract_hard_alignment(attn[i], src_tokens[i], tgt_tokens[i], self.pad, self.eos)
+            finalized[i // beam_size][i % beam_size]['alignment'] = alignment
+        return finalized
+
+    def _prepare_batch_for_alignment(self, sample, hypothesis):
+        src_tokens = sample['net_input']['src_tokens']
+        bsz = src_tokens.shape[0]
+        src_tokens = src_tokens[:, None, :].expand(-1, self.beam_size, -1).contiguous().view(bsz * self.beam_size, -1)
+        src_lengths = sample['net_input']['src_lengths']
+        src_lengths = src_lengths[:, None].expand(-1, self.beam_size).contiguous().view(bsz * self.beam_size)
+        prev_output_tokens = data_utils.collate_tokens(
+            [beam['tokens'] for example in hypothesis for beam in example],
+            self.pad, self.eos, self.left_pad_target, move_eos_to_beginning=True,
+        )
+        tgt_tokens = data_utils.collate_tokens(
+            [beam['tokens'] for example in hypothesis for beam in example],
+            self.pad, self.eos, self.left_pad_target, move_eos_to_beginning=False,
+        )
+        return src_tokens, src_lengths, prev_output_tokens, tgt_tokens
+
+
+class EnsembleModelWithAlignment(EnsembleModel):
+    """A wrapper around an ensemble of models."""
+
+    def __init__(self, models):
+        super().__init__(models)
+
+    def forward_align(self, src_tokens, src_lengths, prev_output_tokens):
+        avg_attn = None
+        for model in self.models:
+            decoder_out = model(src_tokens, src_lengths, prev_output_tokens)
+            attn = decoder_out[1]['attn']
+            if avg_attn is None:
+                avg_attn = attn
+            else:
+                avg_attn.add_(attn)
+        if len(self.models) > 1:
+            avg_attn.div_(len(self.models))
+        return avg_attn
+
+    def _decode_one(
+        self, tokens, model, encoder_out, incremental_states, log_probs,
+        temperature=1.,
+    ):
+        if self.incremental_states is not None:
+            decoder_out = list(model.forward_decoder(
+                tokens,
+                encoder_out=encoder_out,
+                incremental_state=self.incremental_states[model],
+            ))
+        else:
+            decoder_out = list(model.forward_decoder(tokens, encoder_out=encoder_out))
+        decoder_out[0] = decoder_out[0][:, -1:, :]
+        if temperature != 1.:
+            decoder_out[0].div_(temperature)
+        attn = decoder_out[1]
+        if type(attn) is dict:
+            attn = attn.get('attn', None)
+        if attn is not None:
+            attn = attn[:, -1, :]
+        probs = model.get_normalized_probs(decoder_out, log_probs=log_probs)
+        probs = probs[:, -1, :]
+        return probs, attn

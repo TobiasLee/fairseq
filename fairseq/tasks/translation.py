@@ -1,19 +1,21 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import itertools
 import os
 
 from fairseq import options, utils
 from fairseq.data import (
+    AppendTokenDataset,
     ConcatDataset,
     data_utils,
     indexed_dataset,
     LanguagePairDataset,
+    PrependTokenDataset,
+    StripTokenDataset,
+    TruncateDataset,
 )
 
 from . import FairseqTask, register_task
@@ -24,7 +26,9 @@ def load_langpair_dataset(
     src, src_dict,
     tgt, tgt_dict,
     combine, dataset_impl, upsample_primary,
-    left_pad_source, left_pad_target, max_source_positions, max_target_positions,
+    left_pad_source, left_pad_target, max_source_positions,
+    max_target_positions, prepend_bos=False, load_alignments=False,
+    truncate_source=False,
 ):
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, lang))
@@ -47,10 +51,19 @@ def load_langpair_dataset(
             else:
                 raise FileNotFoundError('Dataset not found: {} ({})'.format(split, data_path))
 
-        src_datasets.append(indexed_dataset.make_dataset(prefix + src, impl=dataset_impl,
-                                                         fix_lua_indexing=True, dictionary=src_dict))
-        tgt_datasets.append(indexed_dataset.make_dataset(prefix + tgt, impl=dataset_impl,
-                                                         fix_lua_indexing=True, dictionary=tgt_dict))
+        src_dataset = data_utils.load_indexed_dataset(prefix + src, src_dict, dataset_impl)
+        if truncate_source:
+            src_dataset = AppendTokenDataset(
+                TruncateDataset(
+                    StripTokenDataset(src_dataset, src_dict.eos()),
+                    max_source_positions - 1,
+                ),
+                src_dict.eos(),
+            )
+        src_datasets.append(src_dataset)
+        tgt_datasets.append(
+            data_utils.load_indexed_dataset(prefix + tgt, tgt_dict, dataset_impl)
+        )
 
         print('| {} {} {}-{} {} examples'.format(data_path, split_k, src, tgt, len(src_datasets[-1])))
 
@@ -67,6 +80,17 @@ def load_langpair_dataset(
         src_dataset = ConcatDataset(src_datasets, sample_ratios)
         tgt_dataset = ConcatDataset(tgt_datasets, sample_ratios)
 
+    if prepend_bos:
+        assert hasattr(src_dict, "bos_index") and hasattr(tgt_dict, "bos_index")
+        src_dataset = PrependTokenDataset(src_dataset, src_dict.bos())
+        tgt_dataset = PrependTokenDataset(tgt_dataset, tgt_dict.bos())
+
+    align_dataset = None
+    if load_alignments:
+        align_path = os.path.join(data_path, '{}.align.{}-{}'.format(split, src, tgt))
+        if indexed_dataset.dataset_exists(align_path, impl=dataset_impl):
+            align_dataset = data_utils.load_indexed_dataset(align_path, None, dataset_impl)
+
     return LanguagePairDataset(
         src_dataset, src_dataset.sizes, src_dict,
         tgt_dataset, tgt_dataset.sizes, tgt_dict,
@@ -74,6 +98,7 @@ def load_langpair_dataset(
         left_pad_target=left_pad_target,
         max_source_positions=max_source_positions,
         max_target_positions=max_target_positions,
+        align_dataset=align_dataset,
     )
 
 
@@ -109,10 +134,8 @@ class TranslationTask(FairseqTask):
                             help='source language')
         parser.add_argument('-t', '--target-lang', default=None, metavar='TARGET',
                             help='target language')
-        parser.add_argument('--lazy-load', action='store_true',
-                            help='load the dataset lazily')
-        parser.add_argument('--raw-text', action='store_true',
-                            help='load raw text dataset')
+        parser.add_argument('--load-alignments', action='store_true',
+                            help='load the binarized alignments')
         parser.add_argument('--left-pad-source', default='True', type=str, metavar='BOOL',
                             help='pad the source on the left')
         parser.add_argument('--left-pad-target', default='False', type=str, metavar='BOOL',
@@ -123,6 +146,8 @@ class TranslationTask(FairseqTask):
                             help='max number of tokens in the target sequence')
         parser.add_argument('--upsample-primary', default=1, type=int,
                             help='amount to upsample primary dataset')
+        parser.add_argument('--truncate-source', action='store_true', default=False,
+                            help='truncate source to max-source-positions')
         # fmt: on
 
     def __init__(self, args, src_dict, tgt_dict):
@@ -139,14 +164,8 @@ class TranslationTask(FairseqTask):
         """
         args.left_pad_source = options.eval_bool(args.left_pad_source)
         args.left_pad_target = options.eval_bool(args.left_pad_target)
-        if getattr(args, 'raw_text', False):
-            utils.deprecation_warning('--raw-text is deprecated, please use --dataset-impl=raw')
-            args.dataset_impl = 'raw'
-        elif getattr(args, 'lazy_load', False):
-            utils.deprecation_warning('--lazy-load is deprecated, please use --dataset-impl=lazy')
-            args.dataset_impl = 'lazy'
 
-        paths = args.data.split(':')
+        paths = args.data.split(os.pathsep)
         assert len(paths) > 0
         # find language pair automatically
         if args.source_lang is None or args.target_lang is None:
@@ -171,7 +190,7 @@ class TranslationTask(FairseqTask):
         Args:
             split (str): name of the split (e.g., train, valid, test)
         """
-        paths = self.args.data.split(':')
+        paths = self.args.data.split(os.pathsep)
         assert len(paths) > 0
         data_path = paths[epoch % len(paths)]
 
@@ -186,6 +205,8 @@ class TranslationTask(FairseqTask):
             left_pad_target=self.args.left_pad_target,
             max_source_positions=self.args.max_source_positions,
             max_target_positions=self.args.max_target_positions,
+            load_alignments=self.args.load_alignments,
+            truncate_source=self.args.truncate_source,
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths):

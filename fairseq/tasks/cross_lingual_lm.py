@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import itertools
 import os
@@ -13,16 +11,16 @@ from collections import OrderedDict
 import numpy as np
 
 from fairseq import tokenizer
-from fairseq.data.masked_lm_dictionary import MaskedLMDictionary
+from fairseq.data.legacy.masked_lm_dictionary import MaskedLMDictionary
 
 from fairseq.data import (
     ConcatDataset,
-    indexed_dataset,
+    data_utils,
     TokenBlockDataset,
 )
 
 from fairseq.data import Dictionary
-from fairseq.data.masked_lm_dataset import MaskedLMDataset
+from fairseq.data.legacy.masked_lm_dataset import MaskedLMDataset
 from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 
 from . import FairseqTask, register_task
@@ -48,10 +46,6 @@ class CrossLingualLMTask(FairseqTask):
         parser.add_argument('--monolingual-langs', default='en', type=str,
                             help='comma separated list of languages for which we'
                                  ' want to train XLM on')
-        parser.add_argument('--raw-text', default=False, action='store_true',
-                            help='load raw text dataset')
-        parser.add_argument('--lazy-load', action='store_true',
-                            help='load the dataset lazily')
         parser.add_argument('--shuffle', action='store_true',
                             help='shuffle each monolingual dataset while'
                             ' training')
@@ -106,7 +100,7 @@ class CrossLingualLMTask(FairseqTask):
     def _load_single_lang_dataset(self, split, epoch):
         loaded_datasets = []
 
-        paths = self.args.data.split(':')
+        paths = self.args.data.split(os.pathsep)
         assert len(paths) > 0
         data_path = paths[epoch % len(paths)]
 
@@ -114,10 +108,7 @@ class CrossLingualLMTask(FairseqTask):
             split_k = split + (str(k) if k > 0 else '')
             path = os.path.join(data_path, split_k)
 
-            ds = indexed_dataset.make_dataset(
-                path, impl=self.args.dataset_impl, fix_lua_indexing=True,
-                dictionary=self.dictionary,
-            )
+            ds = data_utils.load_indexed_dataset(path, self.dictionary, self.args.dataset_impl)
             if ds is None:
                 if k > 0:
                     break
@@ -175,5 +166,5 @@ class CrossLingualLMTask(FairseqTask):
 
         self.datasets[split] = MultiCorpusSampledDataset(dataset_map)
         print('| {} {} {} examples'.format(
-            self.args.data.split(':')[epoch], split, len(self.datasets[split]))
+            self.args.data.split(os.pathsep)[epoch], split, len(self.datasets[split]))
         )

@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 from collections import Counter
 import os
@@ -53,6 +51,22 @@ class Binarizer:
                 consumer(ids)
                 line = f.readline()
         return {'nseq': nseq, 'nunk': sum(replaced.values()), 'ntok': ntok, 'replaced': replaced}
+
+    @staticmethod
+    def binarize_alignments(filename, alignment_parser, consumer, offset=0, end=-1):
+        nseq = 0
+
+        with open(filename, 'r') as f:
+            f.seek(offset)
+            line = safe_readline(f)
+            while line:
+                if end > 0 and f.tell() > end:
+                    break
+                ids = alignment_parser(line)
+                nseq += 1
+                consumer(ids)
+                line = f.readline()
+        return {'nseq': nseq}
 
     @staticmethod
     def find_offsets(filename, num_chunks):

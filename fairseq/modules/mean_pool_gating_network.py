@@ -1,9 +1,7 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
+# Copyright (c) Facebook, Inc. and its affiliates.
 #
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import torch
 import torch.nn.functional as F
@@ -28,20 +26,19 @@ class MeanPoolGatingNetwork(torch.nn.Module):
 
     def forward(self, encoder_out):
         if not (
-            isinstance(encoder_out, dict)
-            and 'encoder_out' in encoder_out
-            and 'encoder_padding_mask' in encoder_out
-            and encoder_out['encoder_out'].size(2) == self.embed_dim
+            hasattr(encoder_out, 'encoder_out')
+            and hasattr(encoder_out, 'encoder_padding_mask')
+            and encoder_out.encoder_out.size(2) == self.embed_dim
         ):
             raise ValueError('Unexpected format for encoder_out')
 
         # mean pooling over time
-        encoder_padding_mask = encoder_out['encoder_padding_mask']  # B x T
-        encoder_out = encoder_out['encoder_out'].transpose(0, 1)    # B x T x C
+        encoder_padding_mask = encoder_out.encoder_padding_mask  # B x T
+        encoder_out = encoder_out.encoder_out.transpose(0, 1)    # B x T x C
         if encoder_padding_mask is not None:
             encoder_out = encoder_out.clone()  # required because of transpose above
             encoder_out[encoder_padding_mask] = 0
-            ntokens = torch.sum(1 - encoder_padding_mask, dim=1, keepdim=True)
+            ntokens = torch.sum(~encoder_padding_mask, dim=1, keepdim=True)
             x = torch.sum(encoder_out, dim=1) / ntokens.type_as(encoder_out)
         else:
             x = torch.mean(encoder_out, dim=1)
