@@ -137,7 +137,7 @@ def main(args, init_distributed=False):
          loss_key='loss')
     if args.plot:
         print('plotting....')
-        plot_2D.plot_2d_contour(args.surf_file, 'loss', args.vmin, args.vmax, args.vlevel, args.show)
+        plot_2D.plot_2d_contour(surf_file, 'loss', args.vmin, args.vmax, args.vlevel, args.show)
 
     # print('| done plotting in {:.1f} seconds'.format(train_meter.sum))
 
