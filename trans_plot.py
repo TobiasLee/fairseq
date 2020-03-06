@@ -21,15 +21,16 @@ import numpy as np
 import torch
 
 from fairseq import checkpoint_utils, distributed_utils, options, progress_bar, tasks, utils
-from fairseq.data import iterators
 from fairseq.trainer import Trainer
 from fairseq.meters import AverageMeter, StopwatchMeter
+from fairseq.models.transformer import TransformerModel
 
 from plot import net_plotter
 from plot import scheduler
 from plot import mpi4pytorch as mpi
 from plot.plot_surface import name_surface_file, setup_surface_file
 from plot import projection as proj
+from plot import plot_2D
 
 
 def main(args, init_distributed=False):
@@ -109,7 +110,8 @@ def main(args, init_distributed=False):
     # --------------------------------------------------------------------------
     dir_file = net_plotter.name_direction_file(args)  # name the direction file
     if rank == 0:
-        net_plotter.setup_direction(args, dir_file, model)
+        init_net = TransformerModel.build_model(args, task) if args.init_model else None
+        net_plotter.setup_direction(args, dir_file, model, init_net)
 
     surf_file = name_surface_file(args, dir_file)
     if rank == 0:
@@ -133,8 +135,11 @@ def main(args, init_distributed=False):
          comm, rank, args,
          trainer, task, epoch_itr, dataset2plot,
          loss_key='loss')
+    if args.plot:
+        print('plotting....')
+        plot_2D.plot_2d_contour(surf_file, 'loss', args.vmin, args.vmax, args.vlevel, args.show)
 
-    print('| done plotting in {:.1f} seconds'.format(train_meter.sum))
+    # print('| done plotting in {:.1f} seconds'.format(train_meter.sum))
 
 
 def validate(args, trainer, task, epoch_itr, subsets):
@@ -365,7 +370,7 @@ def cli_main():
     parser.add_argument('--model-file', default='', help='path to the trained model file')
     parser.add_argument('--model-file2', default='', help='use (model_file2 - model_file) as the xdirection')
     parser.add_argument('--model-file3', default='', help='use (model_file3 - model_file) as the ydirection')
-
+    parser.add_argument('--init-model', action='store_true', default=False, help='x direction is trained model - initial model')
     # direction parameters
     parser.add_argument('--dir-file', default='',
                         help='specify the name of direction file, or the path to an eisting direction file')

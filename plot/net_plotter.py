@@ -37,7 +37,7 @@ def set_weights(net, weights, directions=None, step=None):
             changes = [d*step for d in directions[0]]
 
         for (p, w, d) in zip(net.parameters(), weights, changes):
-            p.data = w + torch.Tensor(d).type(type(w)).cuda()
+            p.data = w + torch.Tensor(d).type_as(w.dtype).cuda() # fix fp 16 bug
 
 
 def set_states(net, states, directions=None, step=None):
@@ -221,7 +221,7 @@ def create_random_direction(net, dir_type='weights', ignore='biasbn', norm='filt
     return direction
 
 
-def setup_direction(args, dir_file, net):
+def setup_direction(args, dir_file, net, init_net=None):
     """
         Setup the h5 file to store the directions.
         - xdirection, ydirection: The pertubation direction added to the mdoel.
@@ -245,8 +245,10 @@ def setup_direction(args, dir_file, net):
         print("Setting up the plotting directions...")
         if args.model_file2:
             raise Exception("Not Support now")
+
+        elif args.init_model and init_net is not None:
             #net2 = model_loader.load(args.dataset, args.model, args.model_file2)
-            #xdirection = create_target_direction(net, net2, args.dir_type)
+            xdirection = create_target_direction(net, init_net, args.dir_type)
         else:
             xdirection = create_random_direction(net, args.dir_type, args.xignore, args.xnorm)
         h5_util.write_list(f, 'xdirection', xdirection)
@@ -297,7 +299,8 @@ def name_direction_file(args):
         dir_file += '_xignore=' + args.xignore
     if args.xnorm:
         dir_file += '_xnorm=' + args.xnorm
-
+    if args.init_model:
+        dir_file += '_inital_direction'
     # name for ydirection
     if args.y:
         if file3:
