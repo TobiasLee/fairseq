@@ -119,7 +119,9 @@ def project_2D(d, dx, dy, proj_method):
         # solve the least squre problem: Ax = d
         A = np.vstack([dx.numpy(), dy.numpy()]).T
         [x, y] = np.linalg.lstsq(A, d.numpy())[0]
-
+    elif proj_method == 'bert':
+        x = project_1D(d, dx)
+        y = torch.sqrt((d.norm() - dx.norm()) * (d.norm() - dx.norm()) - x * x)
     return x, y
 
 
