@@ -71,8 +71,9 @@ def main(args, init_distributed=False):
     # collect models to be projected
     # --------------------------------------------------------------------------
     model_files = []
-    for epoch in range(args.start_epoch, args.max_epoch + args.save_epoch, args.save_epoch):
-        model_file = args.model_folder + '/' + args.prefix + '_' + str(epoch) + args.suffix
+    print(args.start_epoch, args.end_epoch, args.save_epoch)
+    for epoch in range(args.start_epoch, args.end_epoch + args.save_epoch, args.save_epoch):
+        model_file = args.model_folder + '/' + args.prefix + str(epoch) + args.suffix
         assert os.path.exists(model_file), 'model %s does not exist' % model_file
         model_files.append(model_file)
 
@@ -80,6 +81,8 @@ def main(args, init_distributed=False):
     # load or create projection directions
     # --------------------------------------------------------------------------
     dir_file = net_plotter.name_direction_file(args)  # name the direction file
+    print('dir file:', dir_file)
+    assert os.path.exists(dir_file),"direction file not exsits"
     # if args.dir_file:
     #     dir_file = args.dir_file
     # else:
@@ -88,9 +91,11 @@ def main(args, init_distributed=False):
     # --------------------------------------------------------------------------
     # projection trajectory to given directions
     # --------------------------------------------------------------------------
+    print('start plotting...')
     proj_file = proj.project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
                                                 args.dir_type, proj_method='cos')
     plot_2D.plot_trajectory(proj_file, dir_file)
+    print('plotting finished')
 
 
 def cli_main():
@@ -104,8 +109,12 @@ def cli_main():
 
     # model parameters
     parser.add_argument('--model-folder', default='', help='the common folder that contains model_file and model_file2')
+    parser.add_argument('--model-file', default='', help='path to the trained model file')
+    parser.add_argument('--model-file2', default='', help='use (model_file2 - model_file) as the xdirection')
+    parser.add_argument('--model-file3', default='', help='use (model_file3 - model_file) as the ydirection')
+    parser.add_argument('--init-model', action='store_true', default=False, help='x direction is trained model - initial model')
 
-    # direction parameters
+# direction parameters
     parser.add_argument('--dir-file', default='',
                         help='specify the name of direction file, or the path to an eisting direction file')
     parser.add_argument('--dir-type', default='weights',
@@ -123,10 +132,10 @@ def cli_main():
                         help='customize the name of surface file, could be an existing file.')
     # checkpoint params
     parser.add_argument('--prefix', type=str, default='checkpoint', help='prefix of ckpt')
-    parser.add_argument('--subfix', type=str, default='.pt', help='subfix of ckpt')
-    parser.add_argument('--start_epoch', default=0, type=int, help='min index of epochs')
-    parser.add_argument('--max_epoch', default=40, type=int, help='max number of epochs')
-    parser.add_argument('--save_epoch', default=1, type=int, help='save models every few epochs')
+    parser.add_argument('--suffix', type=str, default='.pt', help='subfix of ckpt')
+    parser.add_argument('--start-epoch', default=1, type=int, help='min index of epochs')
+    parser.add_argument('--end-epoch', default=40, type=int, help='max number of epochs')
+    parser.add_argument('--save-epoch', default=1, type=int, help='save models every few epochs')
 
     # plot parameters
     parser.add_argument('--proj-file', default='', help='the .h5 file contains projected optimization trajectory.')

@@ -14,10 +14,12 @@ def load_transformer(args, task, model_file):
     net = TransformerModel.build_model(args, task)
     state = checkpoint_utils.load_checkpoint_to_cpu(model_file)
     try:
-        net.load_state_dict(model_file, state["model"], strict=True, args=args)
+        net.load_state_dict(state["model"], strict=True, args=args)
     except Exception:
         raise Exception(
             "Cannot load model parameters from checkpoint {}; "
             "please ensure that the architectures match.".format(model_file)
         )
+    print('load %s successfully' % model_file)
+    net = net.cuda()
     return net

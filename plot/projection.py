@@ -7,9 +7,9 @@ import torch
 import os
 import copy
 import h5py
-import fairseq.plot.net_plotter as net_plotter
-import fairseq.plot.model_loader as model_loader
-import fairseq.plot.h5_util as h5_util
+import net_plotter
+import model_loader
+import h5_util 
 from sklearn.decomposition import PCA
 
 
@@ -192,7 +192,7 @@ def project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
         Returns:
           proj_file: the projection filename
     """
-
+    print(model_files)
     proj_file = dir_file + '_proj_' + proj_method + '.h5'
     if os.path.exists(proj_file):
         print('The projection file exists! No projection is performed unless %s is deleted' % proj_file)
@@ -202,10 +202,11 @@ def project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
     directions = net_plotter.load_directions(dir_file)
     dx = nplist_to_tensor(directions[0])
     dy = nplist_to_tensor(directions[1])
-
+   
     xcoord, ycoord = [], []
     for model_file in model_files:
-        net2 = model_loader( model_file, args=args, task=task)
+
+        net2 = model_loader.load_transformer(args, task, model_file) 
         if dir_type == 'weights':
             w2 = net_plotter.get_weights(net2)
             d = net_plotter.get_diff_weights(w, w2)

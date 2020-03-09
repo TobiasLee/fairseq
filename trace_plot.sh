@@ -2,7 +2,7 @@ ARCH=transformer_iwslt_de_en
 DATA_PATH=data-bin/iwslt14.tokenized.de-en.joined
 export PYTHONPATH=$PYTHONPATH:./plot/
 LR=0.0005
-GPU=1
+GPU=0
 WU=4000
 
 for SEED in 1234
@@ -24,8 +24,8 @@ mkdir -p $RESULT_PATH
 CUDA_VISIBLE_DEVICES=$GPU   python3 plot_trajectory.py  $DATA_PATH  \
     --dir-type weights --xnorm filter --xignore biasbn --ynorm filter --yignore biasbn  --plot\
     --x=-4:4:41 --y=-4:4:41 --ngpu 1 --valid-subset valid\
-    --model-folder $OUTPUT_PATH --model-file $OUTPUT_PATH/checkpoint_best.pt \
-    --seed $SEED --model-file $OUTPUT_PATH/checkpoint_best.pt  \
+    --model-folder $OUTPUT_PATH --model-file $OUTPUT_PATH/ckpt_best_init_train --init-model \
+    --seed $SEED \
     -a $ARCH  --share-all-embeddings \
     --optimizer adam --lr $LR \
     -s de -t en \
