@@ -7,10 +7,11 @@ import torch
 import os
 import copy
 import h5py
-import net_plotter
-# import model_loader
-import h5_util
+import fairseq.plot.net_plotter as net_plotter
+import fairseq.plot.model_loader as model_loader
+import fairseq.plot.h5_util as h5_util
 from sklearn.decomposition import PCA
+
 
 def tensorlist_to_tensor(weights):
     """ Concatnate a list of tensors into one tensor.
@@ -35,7 +36,7 @@ def nplist_to_tensor(nplist):
     """
     v = []
     for d in nplist:
-        w = torch.tensor(d*np.float64(1.0))
+        w = torch.tensor(d * np.float64(1.0))
         # Ignoreing the scalar values (w.dim() = 0).
         if w.dim() > 1:
             v.append(w.view(w.numel()))
@@ -60,7 +61,7 @@ def npvec_to_tensorlist(direction, params):
         for w in w2:
             w.copy_(torch.tensor(direction[idx:idx + w.numel()]).view(w.size()))
             idx += w.numel()
-        assert(idx == len(direction))
+        assert (idx == len(direction))
         return w2
     else:
         s2 = []
@@ -68,9 +69,8 @@ def npvec_to_tensorlist(direction, params):
         for (k, w) in params.items():
             s2.append(torch.Tensor(direction[idx:idx + w.numel()]).view(w.size()))
             idx += w.numel()
-        assert(idx == len(direction))
+        assert (idx == len(direction))
         return s2
-
 
 
 def cal_angle(vec1, vec2):
@@ -79,9 +79,9 @@ def cal_angle(vec1, vec2):
             vec1, vec2: two tensors or numpy ndarraies
     """
     if isinstance(vec1, torch.Tensor) and isinstance(vec1, torch.Tensor):
-        return torch.dot(vec1, vec2)/(vec1.norm()*vec2.norm()).item()
+        return torch.dot(vec1, vec2) / (vec1.norm() * vec2.norm()).item()
     elif isinstance(vec1, np.ndarray) and isinstance(vec2, np.ndarray):
-        return np.ndarray.dot(vec1, vec2)/(np.linalg.norm(vec1)*np.linalg.norm(vec2))
+        return np.ndarray.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
 
 
 def project_1D(w, d):
@@ -95,7 +95,7 @@ def project_1D(w, d):
             the projection scalar
     """
     assert len(w) == len(d), 'dimension does not match for w and '
-    scale = torch.dot(w, d)/d.norm()
+    scale = torch.dot(w, d) / d.norm()
     return scale.item()
 
 
@@ -124,7 +124,7 @@ def project_2D(d, dx, dy, proj_method):
 
 
 def project_trajectory(dir_file, w, s, dataset, model_name, model_files,
-               dir_type='weights', proj_method='cos'):
+                       dir_type='weights', proj_method='cos'):
     """
         Project the optimization trajectory onto the given two directions.
 
@@ -153,7 +153,7 @@ def project_trajectory(dir_file, w, s, dataset, model_name, model_files,
 
     xcoord, ycoord = [], []
     for model_file in model_files:
-        # net2 = model_loader.load(dataset, model_name, model_file)
+        net2 = load_trasnformer(dataset, model_name, model_file)
         if dir_type == 'weights':
             w2 = net_plotter.get_weights(net2)
             d = net_plotter.get_diff_weights(w, w2)
@@ -163,7 +163,59 @@ def project_trajectory(dir_file, w, s, dataset, model_name, model_files,
         d = tensorlist_to_tensor(d)
 
         x, y = project_2D(d, dx, dy, proj_method)
-        print ("%s  (%.4f, %.4f)" % (model_file, x, y))
+        print("%s  (%.4f, %.4f)" % (model_file, x, y))
+
+        xcoord.append(x)
+        ycoord.append(y)
+
+    f = h5py.File(proj_file, 'w')
+    f['proj_xcoord'] = np.array(xcoord)
+    f['proj_ycoord'] = np.array(ycoord)
+    f.close()
+
+    return proj_file
+
+
+def project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
+                               dir_type='weights', proj_method='cos',
+                               ):
+    """
+        Project the optimization trajectory onto the given two directions.
+
+        Args:
+          dir_file: the h5 file that contains the directions
+          w: weights of the final model
+          s: states of the final model
+          model_files: the checkpoint files
+          dir_type: the type of the direction, weights or states
+          proj_method: cosine projection
+        Returns:
+          proj_file: the projection filename
+    """
+
+    proj_file = dir_file + '_proj_' + proj_method + '.h5'
+    if os.path.exists(proj_file):
+        print('The projection file exists! No projection is performed unless %s is deleted' % proj_file)
+        return proj_file
+
+    # read directions and convert them to vectors
+    directions = net_plotter.load_directions(dir_file)
+    dx = nplist_to_tensor(directions[0])
+    dy = nplist_to_tensor(directions[1])
+
+    xcoord, ycoord = [], []
+    for model_file in model_files:
+        net2 = model_loader( model_file, args=args, task=task)
+        if dir_type == 'weights':
+            w2 = net_plotter.get_weights(net2)
+            d = net_plotter.get_diff_weights(w, w2)
+        elif dir_type == 'states':
+            s2 = net2.state_dict()
+            d = net_plotter.get_diff_states(s, s2)
+        d = tensorlist_to_tensor(d)
+
+        x, y = project_2D(d, dx, dy, proj_method)
+        print("%s  (%.4f, %.4f)" % (model_file, x, y))
 
         xcoord.append(x)
         ycoord.append(y)
@@ -203,8 +255,8 @@ def setup_PCA_directions(args, model_files, w, s):
     # load models and prepare the optimization path matrix
     matrix = []
     for model_file in model_files:
-        print (model_file)
-        
+        print(model_file)
+
         # net2 = model_loader.load(args.dataset, args.model, model_file)
         if args.dir_type == 'weights':
             w2 = net_plotter.get_weights(net2)
@@ -213,12 +265,12 @@ def setup_PCA_directions(args, model_files, w, s):
             s2 = net2.state_dict()
             d = net_plotter.get_diff_states(s, s2)
         if args.ignore == 'biasbn':
-        	net_plotter.ignore_biasbn(d)
+            net_plotter.ignore_biasbn(d)
         d = tensorlist_to_tensor(d)
         matrix.append(d.numpy())
 
     # Perform PCA on the optimization path matrix
-    print ("Perform PCA on the models")
+    print("Perform PCA on the models")
     pca = PCA(n_components=2)
     pca.fit(np.array(matrix))
     pc1 = np.array(pca.components_[0])
@@ -248,7 +300,6 @@ def setup_PCA_directions(args, model_files, w, s):
     f['explained_variance_'] = pca.explained_variance_
 
     f.close()
-    print ('PCA directions saved in: %s' % dir_name)
+    print('PCA directions saved in: %s' % dir_name)
 
     return dir_name
-

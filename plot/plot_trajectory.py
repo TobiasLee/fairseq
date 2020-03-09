@@ -9,10 +9,9 @@ import math
 import h5py
 import os
 import argparse
-import model_loader
-import net_plotter
-from projection import setup_PCA_directions, project_trajectory
-import plot_2D
+from . import net_plotter
+from .projection import setup_PCA_directions, project_trajectory
+from . import plot_2D
 
 
 if __name__ == '__main__':
@@ -25,7 +24,7 @@ if __name__ == '__main__':
                                 states (include BN.running_mean/var)""")
     parser.add_argument('--ignore', default='', help='ignore bias and BN paras: biasbn (no bias or bn)')
     parser.add_argument('--prefix', default='model_', help='prefix for the checkpint model')
-    parser.add_argument('--suffix', default='.t7', help='prefix for the checkpint model')
+    parser.add_argument('--suffix', default='.pt', help='prefix for the checkpint model')
     parser.add_argument('--start_epoch', default=0, type=int, help='min index of epochs')
     parser.add_argument('--max_epoch', default=300, type=int, help='max number of epochs')
     parser.add_argument('--save_epoch', default=1, type=int, help='save models every few epochs')
