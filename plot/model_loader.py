@@ -21,5 +21,5 @@ def load_transformer(args, task, model_file):
             "please ensure that the architectures match.".format(model_file)
         )
     print('load %s successfully' % model_file)
-    net = net.cuda()
+    # net = net.cuda()
     return net

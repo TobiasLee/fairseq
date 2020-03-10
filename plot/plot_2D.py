@@ -108,7 +108,7 @@ def plot_trajectory(proj_file, dir_file, show=False):
 
 
 def plot_contour_trajectory(surf_file, dir_file, proj_file, surf_name='loss_vals',
-                            vmin=0.1, vmax=10, vlevel=0.5, show=False):
+                            vmin=3, vmax=300, vlevel=10, show=False):
     """2D contour + trajectory"""
 
     assert exists(surf_file) and exists(proj_file) and exists(dir_file)
@@ -123,7 +123,7 @@ def plot_contour_trajectory(surf_file, dir_file, proj_file, surf_name='loss_vals
 
     fig = plt.figure()
     CS1 = plt.contour(X, Y, Z, levels=np.arange(vmin, vmax, vlevel))
-    CS2 = plt.contour(X, Y, Z, levels=np.logspace(1, 8, num=8))
+   # CS2 = plt.contour(X, Y, Z , levels=np.logspace(1, 2, num=8))
 
     # plot trajectories
     pf = h5py.File(proj_file, 'r')
@@ -135,13 +135,13 @@ def plot_contour_trajectory(surf_file, dir_file, proj_file, surf_name='loss_vals
 
     # add PCA notes
     df = h5py.File(dir_file,'r')
-    ratio_x = df['explained_variance_ratio_'][0]
-    ratio_y = df['explained_variance_ratio_'][1]
-    plt.xlabel('1st PC: %.2f %%' % (ratio_x*100), fontsize='xx-large')
-    plt.ylabel('2nd PC: %.2f %%' % (ratio_y*100), fontsize='xx-large')
+    #ratio_x = df['explained_variance_ratio_'][0]
+    #ratio_y = df['explained_variance_ratio_'][1]
+    #plt.xlabel('1st PC: %.2f %%' % (ratio_x*100), fontsize='xx-large')
+    #plt.ylabel('2nd PC: %.2f %%' % (ratio_y*100), fontsize='xx-large')
     df.close()
-    plt.clabel(CS1, inline=1, fontsize=6)
-    plt.clabel(CS2, inline=1, fontsize=6)
+    plt.clabel(CS1, inline=1, fontsize=2)
+   # plt.clabel(CS2, inline=1, fontsize=2)
     fig.savefig(proj_file + '_' + surf_name + '_2dcontour_proj.pdf', dpi=300,
                 bbox_inches='tight', format='pdf')
     pf.close()
@@ -190,9 +190,9 @@ def plot_2d_eig_ratio(surf_file, val_1='min_eig', val_2='max_eig', show=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Plot 2D loss surface')
     parser.add_argument('--surf_file', '-f', default='', help='The h5 file that contains surface values')
-    parser.add_argument('--dir_file', default='', help='The h5 file that contains directions')
-    parser.add_argument('--proj_file', default='', help='The h5 file that contains the projected trajectories')
-    parser.add_argument('--surf_name', default='train_loss', help='The type of surface to plot')
+    parser.add_argument('--dir_file', '-d', default='', help='The h5 file that contains directions')
+    parser.add_argument('--proj_file', '-p',default='', help='The h5 file that contains the projected trajectories')
+    parser.add_argument('--surf_name', '-n', default='train_loss', help='The type of surface to plot')
     parser.add_argument('--vmax', default=10, type=float, help='Maximum value to map')
     parser.add_argument('--vmin', default=0.1, type=float, help='Miminum value to map')
     parser.add_argument('--vlevel', default=0.5, type=float, help='plot contours every vlevel')

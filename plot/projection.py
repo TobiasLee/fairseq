@@ -110,7 +110,7 @@ def project_2D(d, dx, dy, proj_method):
         Returns:
             x, y: the projection coordinates
     """
-
+    print(proj_method) 
     if proj_method == 'cos':
         # when dx and dy are orthorgonal
         x = project_1D(d, dx)
@@ -120,8 +120,8 @@ def project_2D(d, dx, dy, proj_method):
         A = np.vstack([dx.numpy(), dy.numpy()]).T
         [x, y] = np.linalg.lstsq(A, d.numpy())[0]
     elif proj_method == 'bert':
-        x = project_1D(d, dx)
-        y = torch.sqrt((d.norm() - dx.norm()) * (d.norm() - dx.norm()) - x * x)
+        x = project_1D(d, dx) / dx.norm()
+        y = torch.sqrt((d.norm() / dx.norm()) **2  - x ** 2 )
     return x, y
 
 
@@ -142,7 +142,7 @@ def project_trajectory(dir_file, w, s, dataset, model_name, model_files,
         Returns:
           proj_file: the projection filename
     """
-
+    print(proj_method)
     proj_file = dir_file + '_proj_' + proj_method + '.h5'
     if os.path.exists(proj_file):
         print('The projection file exists! No projection is performed unless %s is deleted' % proj_file)

@@ -440,24 +440,25 @@ class Trainer(object):
                     self.optimizer.multiply_grads(self.args.distributed_world_size / float(sample_size))
                 else:
                     self.optimizer.multiply_grads(1 / float(sample_size))
-            for name, param in self.model.named_parameters():
-                if 'decoder' in name and 'fc' in name and 'weight' in name:
-                    self.norm_dict[name].append(param.grad)
-                elif 'encoder' in name and 'fc' in name and 'weight' in name:
-                    self.norm_dict[name].append(param.grad)
+     # code for norm 
+          # for name, param in self.model.named_parameters():
+              #  if 'decoder' in name and 'fc' in name and 'weight' in name:
+             #       self.norm_dict[name].append(param.grad)
+            #    elif 'encoder' in name and 'fc' in name and 'weight' in name:
+           #         self.norm_dict[name].append(param.grad)
 
-            for k in self.norm_dict.keys():
-                if len(self.norm_dict[k]) == 10: #i
+          #  for k in self.norm_dict.keys():
+         #       if len(self.norm_dict[k]) == 10: #i
 
-                    self.exit_flag = True
-                    print(k, ":", float(torch.mean(
-                                         torch.stack(self.norm_dict[k], dim=0), 
-                                         dim=0).norm().cpu()))
+        #            self.exit_flag = True
+        #            print(k, ":", float(torch.mean(
+        #                                 torch.stack(self.norm_dict[k], dim=0), 
+        #                                 dim=0).norm().cpu()))
                     #for g in self.norm_dict[k]:
                     #    print(k, float(g.norm().cpu()))
 
-            if self.exit_flag:
-                exit(0)
+        #    if self.exit_flag:
+        #        exit(0)
                     
                     #print(name, ':', float(param.grad.norm().cpu()) if param.grad is not None else -1 )
             #assert 1== 0
@@ -468,7 +469,7 @@ class Trainer(object):
             self._prev_grad_norm = grad_norm
 
             # take an optimization step
-            # self.optimizer.step()
+            self.optimizer.step()
             self.set_num_updates(self.get_num_updates() + 1)
 
             # task specific update per step
