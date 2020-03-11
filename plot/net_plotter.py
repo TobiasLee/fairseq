@@ -241,12 +241,13 @@ def setup_direction(args, dir_file, net, init_net=None):
 
     # Create the plotting directions
     f = h5py.File(dir_file,'w') # create file, fail if exists
-    if not args.dir_file:
+    if args.dir_file:
         print("Setting up the plotting directions...")
         if args.model_file2:
             raise Exception("Not Support now")
 
         elif args.init_model and init_net is not None:
+            print('set by minus init model')
             #net2 = model_loader.load(args.dataset, args.model, args.model_file2)
             xdirection = create_target_direction(net, init_net, args.dir_type)
         else:

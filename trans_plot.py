@@ -108,11 +108,18 @@ def main(args, init_distributed=False):
     # --------------------------------------------------------------------------
     # Setup the direction file and the surface file
     # --------------------------------------------------------------------------
-    dir_file = net_plotter.name_direction_file(args)  # name the direction file
+    if args.dir_file :
+        dir_file = args.dir_file
+    else:
+        dir_file = net_plotter.name_direction_file(args)  # name the direction file
     if rank == 0:
         init_net = TransformerModel.build_model(args, task) if args.init_model else None
+        if torch.cuda.is_available():
+            init_net.cuda()
+        print('setting dir file... init_model: ', args.init_model)
         net_plotter.setup_direction(args, dir_file, model, init_net)
-
+    print('dir file set')
+    exit(0)
     surf_file = name_surface_file(args, dir_file)
     if rank == 0:
         setup_surface_file(args, surf_file, dir_file)
