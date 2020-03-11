@@ -387,6 +387,8 @@ def cli_main():
     parser.add_argument('--idx', default=0, type=int, help='the index for the repeatness experiment')
     parser.add_argument('--surf-file', default='',
                         help='customize the name of surface file, could be an existing file.')
+    parser.add_argument('--normalize-bert', action='store_true', default=False,
+                        help='whether normalize ydirection by xnorm / ynorm')
 
     # plot parameters
     parser.add_argument('--proj-file', default='', help='the .h5 file contains projected optimization trajectory.')
