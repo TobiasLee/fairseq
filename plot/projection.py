@@ -9,7 +9,7 @@ import copy
 import h5py
 import net_plotter
 import model_loader
-import h5_util 
+import h5_util
 from sklearn.decomposition import PCA
 
 
@@ -110,7 +110,7 @@ def project_2D(d, dx, dy, proj_method):
         Returns:
             x, y: the projection coordinates
     """
-    print(proj_method) 
+    print(proj_method)
     if proj_method == 'cos':
         # when dx and dy are orthorgonal
         x = project_1D(d, dx)
@@ -121,7 +121,7 @@ def project_2D(d, dx, dy, proj_method):
         [x, y] = np.linalg.lstsq(A, d.numpy())[0]
     elif proj_method == 'bert':
         x = project_1D(d, dx) / dx.norm()
-        y = torch.sqrt((d.norm() / dx.norm()) **2  - x ** 2 )
+        y = torch.sqrt((d.norm() / dx.norm()) ** 2 - x ** 2)
     return x, y
 
 
@@ -204,11 +204,11 @@ def project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
     directions = net_plotter.load_directions(dir_file)
     dx = nplist_to_tensor(directions[0])
     dy = nplist_to_tensor(directions[1])
-   
+
     xcoord, ycoord = [], []
     for model_file in model_files:
 
-        net2 = model_loader.load_transformer(args, task, model_file) 
+        net2 = model_loader.load_transformer(args, task, model_file)
         if dir_type == 'weights':
             w2 = net_plotter.get_weights(net2)
             d = net_plotter.get_diff_weights(w, w2)
@@ -229,6 +229,52 @@ def project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
     f.close()
 
     return proj_file
+
+
+def project_trace(dir_file, w1, model_files, args, task,
+                  proj_method='mean_dx'):
+    print(model_files)
+    proj_file = dir_file + '_proj_' + proj_method + '.h5'
+    if os.path.exists(proj_file):
+        print('The projection file exists! No projection is performed unless %s is deleted' % proj_file)
+        return proj_file
+
+    # read directions and convert them to vectors
+    directions = net_plotter.load_directions(dir_file)
+    dx = directions[0]
+    dy = directions[1]
+
+    xcoord, ycoord = [], []
+    for model_file in model_files:
+        net2 = model_loader.load_transformer(args, task, model_file)
+        w2 = net_plotter.get_weights(net2)
+        x = compute_mean_diff(dx, w1, w2)
+        y = compute_mean_diff(dy, w1, w2)
+        print("%s  (%.4f, %.4f)" % (model_file, x, y))
+        xcoord.append(x)
+        ycoord.append(y)
+
+    f = h5py.File(proj_file, 'w')
+    f['proj_xcoord'] = np.array(xcoord)
+    f['proj_ycoord'] = np.array(ycoord)
+    f.close()
+    return proj_file
+
+
+def compute_mean_diff(directions, w1, w2):
+    """compute deviation as:
+        delta = sum_i (  deviation(diff_i, d_i) ) / len( directions)
+        deviation = proj_1D( diff_i, d_i)
+
+        :arg directions: dx or dy
+        :arg w1: weight 1
+        :arg w2: weight 2
+    """
+    diffs = [dw2 - dw1 for dw1, dw2 in zip(w1, w2)]
+    ret = 0
+    for dx, diff in zip(directions, diffs):
+        ret += project_1D(w=diff, d=dx)
+    return ret / len(diffs)
 
 
 def setup_PCA_directions(args, model_files, w, s):
