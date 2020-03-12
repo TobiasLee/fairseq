@@ -45,9 +45,11 @@ def main(args, init_distributed=False):
 
     # Build model and criterion
     model = task.build_model(args)
+    # model = model.cuda() -> cause segmentation fault ? 
     criterion = task.build_criterion(args)
     print(model)
-    print('| model {}, criterion {}'.format(args.arch, criterion.__class__.__name__))
+    #print('| model {}, criterion {}'.format(args.arch, criterion.__class__.__name__))
+    #print('bp2')
     print('| num. model params: {} (num. trained: {})'.format(
         sum(p.numel() for p in model.parameters()),
         sum(p.numel() for p in model.parameters() if p.requires_grad),
@@ -55,17 +57,25 @@ def main(args, init_distributed=False):
 
     # Build trainer
     trainer = Trainer(args, task, model, criterion)
-    print('| training on {} GPUs'.format(args.distributed_world_size))
-    print('| max tokens per GPU = {} and max sentences per GPU = {}'.format(
-        args.max_tokens,
-        args.max_sentences,
-    ))
-
+    #print('| training on {} GPUs'.format(args.distributed_world_size))
+    #print('| max tokens per GPU = {} and max sentences per GPU = {}'.format(
+    #    args.max_tokens,
+    #    args.max_sentences,
+    #))
+    extra_state = trainer.load_checkpoint( # we are loading an initialzied model , since the restore_file is fake
+        args.restore_file,
+        args.reset_optimizer,
+        args.reset_lr_scheduler,
+        eval(args.optimizer_overrides),
+        reset_meters=args.reset_meters,
+    )
     # --------------------------------------------------------------------------
-    # load the final model
+    # load the init  model
     # --------------------------------------------------------------------------
+    print('geting model...')
     w = net_plotter.get_weights(model)
     s = model.state_dict()
+    print('finished')
 
     # --------------------------------------------------------------------------
     # collect models to be projected
@@ -93,7 +103,7 @@ def main(args, init_distributed=False):
     # --------------------------------------------------------------------------
     print('start plotting...')
     proj_file = proj.project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
-                                                args.dir_type, proj_method='cos')
+                                                args.dir_type, proj_method='bert')
     plot_2D.plot_trajectory(proj_file, dir_file)
     print('plotting finished')
 
