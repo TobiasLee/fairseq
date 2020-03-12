@@ -102,8 +102,11 @@ def main(args, init_distributed=False):
     # projection trajectory to given directions
     # --------------------------------------------------------------------------
     print('start plotting...')
-    proj_file = proj.project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
-                                                args.dir_type, proj_method='bert')
+
+    # proj_file = proj.project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
+    #                                             args.dir_type, proj_method='bert')
+    proj_file = proj.project_trace(dir_file, w, model_files, args, task,
+                                                 proj_method='mean_dx')
     plot_2D.plot_trajectory(proj_file, dir_file)
     print('plotting finished')
 
