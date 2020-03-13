@@ -152,7 +152,7 @@ def project_trajectory(dir_file, w, s, dataset, model_name, model_files,
     directions = net_plotter.load_directions(dir_file)
     dx = nplist_to_tensor(directions[0])
     dy = nplist_to_tensor(directions[1])
-
+   
     xcoord, ycoord = [], []
     for model_file in model_files:
         net2 = load_trasnformer(dataset, model_name, model_file)
@@ -243,7 +243,8 @@ def project_trace(dir_file, w1, model_files, args, task,
     directions = net_plotter.load_directions(dir_file)
     dx = directions[0]
     dy = directions[1]
-
+    dx = [  torch.tensor(d * np.float64(1.0)) for d in dx]
+    dy = [torch.tensor(d * np.float64(1.0)) for d in dy]
     xcoord, ycoord = [], []
     for model_file in model_files:
         net2 = model_loader.load_transformer(args, task, model_file)
@@ -272,7 +273,10 @@ def compute_mean_diff(directions, w1, w2):
     """
     diffs = [dw2 - dw1 for dw1, dw2 in zip(w1, w2)]
     ret = 0
+    
     for dx, diff in zip(directions, diffs):
+        print(diff.size())
+        print(dx.size())
         ret += project_1D(w=diff, d=dx)
     return ret / len(diffs)
 
