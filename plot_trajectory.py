@@ -57,12 +57,7 @@ def main(args, init_distributed=False):
 
     # Build trainer
     trainer = Trainer(args, task, model, criterion)
-    #print('| training on {} GPUs'.format(args.distributed_world_size))
-    #print('| max tokens per GPU = {} and max sentences per GPU = {}'.format(
-    #    args.max_tokens,
-    #    args.max_sentences,
-    #))
-    extra_state = trainer.load_checkpoint( # we are loading an initialzied model , since the restore_file is fake
+    extra_state = trainer.load_checkpoint( # we are loading an initialzied model, since the restore_file is fake
         args.restore_file,
         args.reset_optimizer,
         args.reset_lr_scheduler,
@@ -90,23 +85,24 @@ def main(args, init_distributed=False):
     # --------------------------------------------------------------------------
     # load or create projection directions
     # --------------------------------------------------------------------------
-    dir_file = net_plotter.name_direction_file(args)  # name the direction file
-    print('dir file:', dir_file)
-    assert os.path.exists(dir_file),"direction file not exsits"
-    # if args.dir_file:
-    #     dir_file = args.dir_file
-    # else:
-    #     dir_file = proj.setup_PCA_directions(args, model_files, w, s)
+    # dir_file = net_plotter.name_direction_file(args)  # name the direction file
 
+    if args.dir_file:
+        dir_file = args.dir_file
+    else:
+        print('setting pca directions...')
+        dir_file = proj.setup_PCA_directions(args, model_files, w, s, task=task)
+    print('dir file:', dir_file)
+    assert os.path.exists(dir_file), "direction file not exsits"
     # --------------------------------------------------------------------------
     # projection trajectory to given directions
     # --------------------------------------------------------------------------
     print('start plotting...')
 
-    # proj_file = proj.project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
-    #                                             args.dir_type, proj_method='bert')
-    proj_file = proj.project_trace(dir_file, w, model_files, args, task,
-                                                 proj_method='mean_dx')
+    proj_file = proj.project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
+                                                args.dir_type, proj_method='cos')
+    # proj_file = proj.project_trace(dir_file, w, model_files, args, task,
+    #                                              proj_method='mean_dx')
     plot_2D.plot_trajectory(proj_file, dir_file)
     print('plotting finished')
 

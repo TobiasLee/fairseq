@@ -277,7 +277,7 @@ def compute_mean_diff(directions, w1, w2):
     return ret / len(diffs)
 
 
-def setup_PCA_directions(args, model_files, w, s):
+def setup_PCA_directions(args, model_files, w, s, task=None):
     """
         Find PCA directions for the optimization path from the initial model
         to the final trained model.
@@ -305,7 +305,7 @@ def setup_PCA_directions(args, model_files, w, s):
     matrix = []
     for model_file in model_files:
         print(model_file)
-
+        net2 = model_loader.load_transformer(args, task, model_file)
         # net2 = model_loader.load(args.dataset, args.model, model_file)
         if args.dir_type == 'weights':
             w2 = net_plotter.get_weights(net2)
@@ -313,8 +313,8 @@ def setup_PCA_directions(args, model_files, w, s):
         elif args.dir_type == 'states':
             s2 = net2.state_dict()
             d = net_plotter.get_diff_states(s, s2)
-        if args.ignore == 'biasbn':
-            net_plotter.ignore_biasbn(d)
+        # if args.ignore == 'biasbn':
+        #     net_plotter.ignore_biasbn(d)
         d = tensorlist_to_tensor(d)
         matrix.append(d.numpy())
 
