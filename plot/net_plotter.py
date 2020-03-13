@@ -343,6 +343,8 @@ def name_direction_file(args):
         dir_file += '_inital_direction'
     if args.normalize_bert:
         dir_file += '_normlize_bert'
+    if args.seed >= 0 :
+        dir_file += '_seed%d' % args.seed
     # name for ydirection
     if args.y:
         if file3:

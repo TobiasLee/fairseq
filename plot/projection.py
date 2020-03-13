@@ -292,8 +292,8 @@ def setup_PCA_directions(args, model_files, w, s, task=None):
 
     # Name the .h5 file that stores the PCA directions.
     folder_name = args.model_folder + '/PCA_' + args.dir_type
-    if args.ignore:
-        folder_name += '_ignore=' + args.ignore
+    #if args.ignore:
+    #    folder_name += '_ignore=' + args.ignore
     folder_name += '_save_epoch=' + str(args.save_epoch)
     os.system('mkdir ' + folder_name)
     dir_name = folder_name + '/directions.h5'
@@ -340,9 +340,9 @@ def setup_PCA_directions(args, model_files, w, s, task=None):
         xdirection = npvec_to_tensorlist(pc1, s)
         ydirection = npvec_to_tensorlist(pc2, s)
 
-    if args.ignore == 'biasbn':
-        net_plotter.ignore_biasbn(xdirection)
-        net_plotter.ignore_biasbn(ydirection)
+    #if args.ignore == 'biasbn':
+    #    net_plotter.ignore_biasbn(xdirection)
+    #    net_plotter.ignore_biasbn(ydirection)
 
     f = h5py.File(dir_name, 'w')
     h5_util.write_list(f, 'xdirection', xdirection)
