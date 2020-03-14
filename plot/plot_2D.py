@@ -108,7 +108,7 @@ def plot_trajectory(proj_file, dir_file, show=False):
 
 
 def plot_contour_trajectory(surf_file, dir_file, proj_file, surf_name='loss_vals',
-                            vmin=3, vmax=300, vlevel=10, show=False):
+                            vmin=3, vmax=300, vlevel=10, ckpt='best',show=False):
     """2D contour + trajectory"""
 
     assert exists(surf_file) and exists(proj_file) and exists(dir_file)
@@ -120,10 +120,11 @@ def plot_contour_trajectory(surf_file, dir_file, proj_file, surf_name='loss_vals
     X, Y = np.meshgrid(x, y)
     if surf_name in f.keys():
         Z = np.array(f[surf_name][:])
-
+    vmin = np.min(Z) - 1
+    vmax = np.max(Z) + 1
     fig = plt.figure()
     CS1 = plt.contour(X, Y, Z, levels=np.arange(vmin, vmax, vlevel))
-   # CS2 = plt.contour(X, Y, Z , levels=np.logspace(1, 2, num=8))
+    CS2 = plt.contour(X, Y, Z , levels=np.logspace(1, 2, num=8))
 
     # plot trajectories
     pf = h5py.File(proj_file, 'r')
@@ -135,14 +136,14 @@ def plot_contour_trajectory(surf_file, dir_file, proj_file, surf_name='loss_vals
 
     # add PCA notes
     df = h5py.File(dir_file,'r')
-    #ratio_x = df['explained_variance_ratio_'][0]
-    #ratio_y = df['explained_variance_ratio_'][1]
-    #plt.xlabel('1st PC: %.2f %%' % (ratio_x*100), fontsize='xx-large')
-    #plt.ylabel('2nd PC: %.2f %%' % (ratio_y*100), fontsize='xx-large')
+    ratio_x = df['explained_variance_ratio_'][0]
+    ratio_y = df['explained_variance_ratio_'][1]
+    plt.xlabel('1st PC: %.2f %%' % (ratio_x*100), fontsize='xx-large')
+    plt.ylabel('2nd PC: %.2f %%' % (ratio_y*100), fontsize='xx-large')
     df.close()
     plt.clabel(CS1, inline=1, fontsize=2)
-   # plt.clabel(CS2, inline=1, fontsize=2)
-    fig.savefig(proj_file + '_' + surf_name + '_2dcontour_proj.pdf', dpi=300,
+    plt.clabel(CS2, inline=1, fontsize=2)
+    fig.savefig(proj_file + '_' + surf_name + '_2dcontour_proj_%s.pdf' % ckpt, dpi=300,
                 bbox_inches='tight', format='pdf')
     pf.close()
     if show: plt.show()

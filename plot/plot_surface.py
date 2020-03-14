@@ -37,7 +37,7 @@ def name_surface_file(args, dir_file):
     surf_file += '_[%s,%s,%d]' % (str(args.xmin), str(args.xmax), int(args.xnum))
     if args.y:
         surf_file += 'x[%s,%s,%d]' % (str(args.ymin), str(args.ymax), int(args.ynum))
-
+    surf_file += "_around_%s" %  args.restore_file # add store file
     # dataloder parameters
     #if args.raw_data:  # without data normalization
     #    surf_file += '_rawdata'
@@ -54,7 +54,7 @@ def setup_surface_file(args, surf_file, dir_file):
         if (args.y and 'ycoordinates' in f.keys()) or 'xcoordinates' in f.keys():
             f.close()
             print("%s is already set up" % surf_file)
-            return
+            return True
 
     f = h5py.File(surf_file, 'a')
     f['dir_file'] = dir_file
@@ -68,7 +68,7 @@ def setup_surface_file(args, surf_file, dir_file):
         f['ycoordinates'] = ycoordinates
     f.close()
 
-    return surf_file
+    return False
 
 
 def crunch(surf_file, net, w, s, d, dataloader, loss_key, acc_key, comm, rank, args):
