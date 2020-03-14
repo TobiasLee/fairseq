@@ -2,7 +2,7 @@ ARCH=transformer_iwslt_de_en
 DATA_PATH=data-bin/iwslt14.tokenized.de-en.joined
 export PYTHONPATH=$PYTHONPATH:./plot/
 LR=0.0005
-GPU=0
+GPU=3
 WU=4000
 NORM="post"
 WARMUP="with-wu"
@@ -22,8 +22,8 @@ mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
 
 CUDA_VISIBLE_DEVICES=$GPU   python3 plot_contour_trace.py  $DATA_PATH  --seed $SEED \
-    --dir-type weights --restore-file $OUTPUT_PATH/checkpoint_best.pt  \
-    --x=-4:4:41 --y=-4:4:41 --ngpu 1 --valid-subset valid\
+    --dir-type weights --restore-file $OUTPUT_PATH/checkpoint_best.pt --dir-folder $OUTPUT_PATH \
+    --x=-4:4:5 --y=-4:4:5 --ngpu 1 --valid-subset valid\
     --model-folder $OUTPUT_PATH  \
     -a $ARCH  --share-all-embeddings \
     --optimizer adam --lr $LR \
@@ -40,8 +40,8 @@ CUDA_VISIBLE_DEVICES=$GPU   python3 plot_contour_trace.py  $DATA_PATH  --seed $S
 
 # proj init model on the surface file already plotted
 CUDA_VISIBLE_DEVICES=$GPU   python3 plot_contour_trace.py  $DATA_PATH  --seed $SEED \
-    --dir-type weights --restore-file $OUTPUT_PATH/checkpoint_best.pt --init-model \
-    --x=-4:4:41 --y=-4:4:41 --ngpu 1 --valid-subset valid\
+    --dir-type weights --restore-file $OUTPUT_PATH/checkpoint_best.pt --init-model --dir-folder $OUTPUT_PATH\
+    --x=-4:4:5 --y=-4:4:5 --ngpu 1 --valid-subset valid\
     --model-folder $OUTPUT_PATH  \
     -a $ARCH  --share-all-embeddings \
     --optimizer adam --lr $LR \

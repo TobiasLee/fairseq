@@ -195,7 +195,7 @@ def project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
           proj_file: the projection filename
     """
     print(model_files)
-    proj_file = dir_file + '_proj_' + proj_method + '.h5'
+    proj_file = dir_file + '_proj_' + proj_method + 'init.' if args.init_model else 'best.' +  '.h5'
     if os.path.exists(proj_file):
         print('The projection file exists! No projection is performed unless %s is deleted' % proj_file)
         return proj_file

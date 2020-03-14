@@ -3,13 +3,11 @@ ARCH=transformer_iwslt_de_en
 DATA_PATH=data-bin/iwslt14.tokenized.de-en.joined
 
 SEED=123
-WU=50000
-LR=0.001
+LR=0.0005
 [ $# -gt 0 ] && SEED=$1
 echo "seed=$SEED"
-echo "warm up updates=$WU"
-OUTPUT_PATH=checkpoints/IWSLT/bln_wu${WU}_${LR}_seed$SEED
-RESULT_PATH=results/IWSLT/bln_wu${WU}_${LR}_seed$SEED
+OUTPUT_PATH=checkpoints/IWSLT/bln_nowu_seed$SEED
+RESULT_PATH=results/IWSLT/bln_nowu_seed$SEED
 
 mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
@@ -24,7 +22,6 @@ CUDA_VISIBLE_DEVICES=3 python3 train.py $DATA_PATH  \
     --min-lr '1e-09' --lr-scheduler inverse_sqrt --weight-decay 0.0001 \
     --criterion label_smoothed_cross_entropy \
     --max-update 50000 \
-    --warmup-updates $WU --warmup-init-lr '1e-07' \
     --adam-betas '(0.9, 0.98)' --save-dir $OUTPUT_PATH \
     --no-progress-bar --log-interval 100 \
     --ddp-backend=no_c10d --fp16 \
@@ -49,14 +46,12 @@ python3 generate.py $DATA_PATH \
 ARCH=transformer_iwslt_de_en
 DATA_PATH=data-bin/iwslt14.tokenized.de-en.joined
 
-SEED=123
-WU=50000
-LR=0.0002
+SEED=1
+LR=0.0005
 [ $# -gt 0 ] && SEED=$1
 echo "seed=$SEED"
-echo "warm up updates=$WU"
-OUTPUT_PATH=checkpoints/IWSLT/bln_wu${WU}_${LR}_seed$SEED
-RESULT_PATH=results/IWSLT/bln_wu${WU}_${LR}_seed$SEED
+OUTPUT_PATH=checkpoints/IWSLT/bln_nowu_seed$SEED
+RESULT_PATH=results/IWSLT/bln_nowu_seed$SEED
 
 mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
@@ -71,7 +66,6 @@ CUDA_VISIBLE_DEVICES=3 python3 train.py $DATA_PATH  \
     --min-lr '1e-09' --lr-scheduler inverse_sqrt --weight-decay 0.0001 \
     --criterion label_smoothed_cross_entropy \
     --max-update 50000 \
-    --warmup-updates $WU --warmup-init-lr '1e-07' \
     --adam-betas '(0.9, 0.98)' --save-dir $OUTPUT_PATH \
     --no-progress-bar --log-interval 100 \
     --ddp-backend=no_c10d --fp16 \
@@ -97,14 +91,12 @@ python3 generate.py $DATA_PATH \
 ARCH=transformer_iwslt_de_en
 DATA_PATH=data-bin/iwslt14.tokenized.de-en.joined
 
-SEED=123
-WU=50000
-LR=0.0001
+SEED=666
+LR=0.0005
 [ $# -gt 0 ] && SEED=$1
 echo "seed=$SEED"
-echo "warm up updates=$WU"
-OUTPUT_PATH=checkpoints/IWSLT/bln_wu${WU}_${LR}_seed$SEED
-RESULT_PATH=results/IWSLT/bln_wu${WU}_${LR}_seed$SEED
+OUTPUT_PATH=checkpoints/IWSLT/bln_nowu_seed$SEED
+RESULT_PATH=results/IWSLT/bln_nowu_seed$SEED
 
 mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
@@ -119,7 +111,6 @@ CUDA_VISIBLE_DEVICES=3 python3 train.py $DATA_PATH  \
     --min-lr '1e-09' --lr-scheduler inverse_sqrt --weight-decay 0.0001 \
     --criterion label_smoothed_cross_entropy \
     --max-update 50000 \
-    --warmup-updates $WU --warmup-init-lr '1e-07' \
     --adam-betas '(0.9, 0.98)' --save-dir $OUTPUT_PATH \
     --no-progress-bar --log-interval 100 \
     --ddp-backend=no_c10d --fp16 \

@@ -1,11 +1,11 @@
 ARCH=transformer_iwslt_de_en
-DATA_PATH=data-bin/iwslt14.tokenized.de-en-joined
+DATA_PATH=data-bin/iwslt14.tokenized.de-en.joined
 
-LR=0.00025
+LR=0.0005
 GPU=0
 WU=4000 
 
-for SEED in 1234 4321 5678 6789
+for SEED in 2345 3456 4567 5678 
 do
 
 echo "seed=$SEED"
@@ -17,7 +17,7 @@ mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
 
 CUDA_VISIBLE_DEVICES=$GPU python3 train.py $DATA_PATH  \
-    --seed $SEED --fp16 \
+    --seed $SEED \
     -a $ARCH  --share-all-embeddings \
     --optimizer adam --lr $LR \
     -s de -t en \
@@ -26,7 +26,7 @@ CUDA_VISIBLE_DEVICES=$GPU python3 train.py $DATA_PATH  \
     --min-lr '1e-09' --lr-scheduler inverse_sqrt --weight-decay 0.0001 \
     --criterion label_smoothed_cross_entropy \
     --max-update 50000 \
-    --warmup-updates $WU --warmup-init-lr '2.5e-4' \
+    --warmup-updates $WU --warmup-init-lr $LR\
     --adam-betas '(0.9, 0.98)' --save-dir $OUTPUT_PATH \
     --no-progress-bar --log-interval 100 \
     --ddp-backend=no_c10d 2>&1 | tee -a $OUTPUT_PATH/train_log.txt 
