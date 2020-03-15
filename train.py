@@ -10,6 +10,7 @@ Train a new model on one or across multiple GPUs.
 import collections
 import math
 import random
+import os 
 
 import numpy as np
 import torch
@@ -68,7 +69,6 @@ def main(args, init_distributed=False):
     # Load the latest checkpoint if one is available and restore the
     # corresponding train iterator
     extra_state, epoch_itr = checkpoint_utils.load_checkpoint(args, trainer)
-
     # Train until the learning rate gets too small
     max_epoch = args.max_epoch or math.inf
     max_update = args.max_update or math.inf
@@ -85,6 +85,9 @@ def main(args, init_distributed=False):
         )
         and trainer.get_num_updates() < max_update
     ):
+        if epoch_itr == 0:
+            trainer.save_checkpoint(os.path.join(args.save_dir, 'checkpoint_0.pt'), extra_state=None)
+
         # train for one epoch
         train(args, trainer, task, epoch_itr)
 

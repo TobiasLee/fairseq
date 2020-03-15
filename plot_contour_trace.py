@@ -19,7 +19,7 @@ from plot import net_plotter
 import plot.projection as proj
 from plot import plot_2D
 from plot.plot_surface import setup_surface_file, name_surface_file
-from trans_plot import plot as plot_surface
+from plot_loss_surface import plot as plot_surface
 
 
 def main(args, init_distributed=False):
@@ -35,9 +35,19 @@ def main(args, init_distributed=False):
         args.distributed_rank = distributed_utils.distributed_init(args)
 
     # Print args
-    print(args)
+   # print(args)
     # Setup task, e.g., translation, language modeling, etc.
     task = tasks.setup_task(args)
+    try:
+        args.xmin, args.xmax, args.xnum = [int(a) for a in args.x.split(':')]
+        print(args.xmin, args.xmax, args.xnum)
+        args.ymin, args.ymax, args.ynum = (None, None, None)
+        if args.y:
+            args.ymin, args.ymax, args.ynum = [int(a) for a in args.y.split(':')]
+            assert args.ymin and args.ymax and args.ynum, \
+                'You specified some arguments for the y axis, but not all'
+    except:
+        raise Exception('Improper format for x- or y-coordinates. Try something like -1:1:51')
 
     # Load valid dataset (we load training data below, based on the latest checkpoint)
     for valid_sub_split in args.valid_subset.split(','):
@@ -47,7 +57,7 @@ def main(args, init_distributed=False):
     model = task.build_model(args)
     # model = model.cuda() -> cause segmentation fault ?
     criterion = task.build_criterion(args)
-    print(model)
+   # print(model)
     # print('| model {}, criterion {}'.format(args.arch, criterion.__class__.__name__))
     # print('bp2')
     print('| num. model params: {} (num. trained: {})'.format(
@@ -58,8 +68,8 @@ def main(args, init_distributed=False):
     # Build trainer
     trainer = Trainer(args, task, model, criterion)
     if args.init_model:
-        print('initialize model with a random one')
-        args.restore_file = 'random_ckpt.pt'
+        print('project no warmup ckpt trace')
+        # args.restore_file = 'random_ckpt.pt'
     _ = trainer.load_checkpoint(  # use this code to restore ckpt
         args.restore_file,
         args.reset_optimizer,
@@ -69,6 +79,8 @@ def main(args, init_distributed=False):
     )
     #
     print('loading model...')
+
+    model.cpu() # avoid segmentation fault
     w = net_plotter.get_weights(model)
     print('finished')
 
@@ -96,6 +108,7 @@ def main(args, init_distributed=False):
     direction = net_plotter.load_directions(dir_file)
 
     if not surf_exist:  # if the surface already exists
+        model.cuda() # back to gpu  to accerlerate loss computation
         # mpi setting, we do not use mpi to avoid bug
         comm, rank, nproc = None, 0, 1
         # dataset and iteraotr
@@ -113,7 +126,9 @@ def main(args, init_distributed=False):
     # projection trajectory to given directions
     # --------------------------------------------------------------------------
     print('start plotting trajectory')
-    proj_file = proj.project_trajectory_fairseq(dir_file, w, model_files, args, task,
+    model = model.cpu() # move to cpu to avoid semantation fault
+    state=None
+    proj_file = proj.project_trajectory_fairseq(dir_file, w, state, model_files, args, task,
                                                 args.dir_type, proj_method='lstsq')
     plot_2D.plot_contour_trajectory(surf_file, dir_file, proj_file,
                                     surf_name='loss', ckpt='init' if args.init_model else 'best')

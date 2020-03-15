@@ -2,15 +2,15 @@ ARCH=transformer_iwslt_de_en
 DATA_PATH=data-bin/iwslt14.tokenized.de-en.joined
 export PYTHONPATH=$PYTHONPATH:./plot/
 LR=0.0005
-GPU=3
+GPU=1
 WU=4000
 NORM="post"
 WARMUP="with-wu"
 
 # what we need
 # a surface file, to show the trajectory of optimization
-# around best ckpt
-#--encoder-normalize-before --decoder-normalize-before \
+# around best ckpt --encoder-normalize-before --decoder-normalize-before 
+#\
 for SEED in 1234
 do
 
@@ -23,7 +23,7 @@ mkdir -p $RESULT_PATH
 
 CUDA_VISIBLE_DEVICES=$GPU   python3 plot_contour_trace.py  $DATA_PATH  --seed $SEED \
     --dir-type weights --restore-file $OUTPUT_PATH/checkpoint_best.pt --dir-folder $OUTPUT_PATH \
-    --x=-4:4:5 --y=-4:4:5 --ngpu 1 --valid-subset valid\
+    --x=-2:2:81 --y=-2:2:81 --ngpu 1 --valid-subset valid\
     --model-folder $OUTPUT_PATH  \
     -a $ARCH  --share-all-embeddings \
     --optimizer adam --lr $LR \
@@ -39,10 +39,11 @@ CUDA_VISIBLE_DEVICES=$GPU   python3 plot_contour_trace.py  $DATA_PATH  --seed $S
     --ddp-backend=no_c10d 2>&1 | tee -a $OUTPUT_PATH/plot_surface_trace_log.txt
 
 # proj init model on the surface file already plotted
+NOWU_PATH=checkpoints/IWSLT/$NORM-norm-nowu-${LR}-seed$SEED
 CUDA_VISIBLE_DEVICES=$GPU   python3 plot_contour_trace.py  $DATA_PATH  --seed $SEED \
     --dir-type weights --restore-file $OUTPUT_PATH/checkpoint_best.pt --init-model --dir-folder $OUTPUT_PATH\
-    --x=-4:4:5 --y=-4:4:5 --ngpu 1 --valid-subset valid\
-    --model-folder $OUTPUT_PATH  \
+    --x=-2:2:81 --y=-2:2:81 --ngpu 1 --valid-subset valid\
+    --model-folder $NOWU_PATH  \
     -a $ARCH  --share-all-embeddings \
     --optimizer adam --lr $LR \
     -s de -t en \
