@@ -85,7 +85,7 @@ def main(args, init_distributed=False):
     print('finished')
 
     # collect models to be projected
-    model_files = []
+    model_files = ['initial'] # add initial ckpt by directly build one
     print(args.start_epoch, args.end_epoch, args.save_epoch)
     for epoch in range(args.start_epoch, args.end_epoch + args.save_epoch, args.save_epoch):
         model_file = args.model_folder + '/' + args.prefix + str(epoch) + args.suffix
@@ -103,7 +103,7 @@ def main(args, init_distributed=False):
     print('dir file:', dir_file)
 
     # plotting loss surface
-    surf_file = name_surface_file(args, dir_file)
+    surf_file = name_surface_file(args, dir_file) # specify around which one, best or init
     surf_exist = setup_surface_file(args, surf_file, dir_file)
     direction = net_plotter.load_directions(dir_file)
 
@@ -130,6 +130,7 @@ def main(args, init_distributed=False):
     state=None
     proj_file = proj.project_trajectory_fairseq(dir_file, w, state, model_files, args, task,
                                                 args.dir_type, proj_method='lstsq')
+    # we need to
     plot_2D.plot_contour_trajectory(surf_file, dir_file, proj_file,
                                     surf_name='loss', ckpt='init' if args.init_model else 'best')
     print('plotting finished')
@@ -168,6 +169,7 @@ def cli_main():
 
     # plot parameters
     parser.add_argument('--proj-file', default='', help='the .h5 file contains projected optimization trajectory.')
+    parser.add_argument('--warmup', default='with-wu', help='proj file for with wu or no wu')
     parser.add_argument('--loss-max', default=5, type=float, help='Maximum value to show in 1D plot')
     parser.add_argument('--log', action='store_true', default=False, help='use log scale for loss values')
     args = options.parse_args_and_arch(parser)

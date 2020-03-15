@@ -195,7 +195,7 @@ def project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
           proj_file: the projection filename
     """
     print(model_files)
-    proj_file = dir_file + '_proj_' + proj_method + ('init' if args.init_model else 'best') +  '.h5'
+    proj_file = dir_file + '_proj_' + proj_method + args.warmup +  '.h5'
     if os.path.exists(proj_file):
         print('The projection file exists! No projection is performed unless %s is deleted' % proj_file)
         return proj_file
@@ -207,8 +207,10 @@ def project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
 
     xcoord, ycoord = [], []
     for model_file in model_files:
-
-        net2 = model_loader.load_transformer(args, task, model_file)
+        if model_file == 'init':
+            net2 = task.build_model(args)  #a model randomly initialized
+        else:
+            net2 = model_loader.load_transformer(args, task, model_file)
         if dir_type == 'weights':
             w2 = net_plotter.get_weights(net2)
             d = net_plotter.get_diff_weights(w, w2)

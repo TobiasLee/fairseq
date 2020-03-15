@@ -37,7 +37,7 @@ def name_surface_file(args, dir_file):
     surf_file += '_[%s,%s,%d]' % (str(args.xmin), str(args.xmax), int(args.xnum))
     if args.y:
         surf_file += 'x[%s,%s,%d]' % (str(args.ymin), str(args.ymax), int(args.ynum))
-    surf_file += "_around_%s" %  args.restore_file.split('/')[-1] # add store file
+    surf_file += "_around_%s" % args.restore_file.split('/')[-1]  # add store file
     # dataloder parameters
     #if args.raw_data:  # without data normalization
     #    surf_file += '_rawdata'
