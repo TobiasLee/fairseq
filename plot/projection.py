@@ -207,7 +207,7 @@ def project_trajectory_fairseq(dir_file, w, s, model_files, args, task,
 
     xcoord, ycoord = [], []
     for model_file in model_files:
-        if model_file == 'init':
+        if model_file == 'initial':
             net2 = task.build_model(args)  #a model randomly initialized
         else:
             net2 = model_loader.load_transformer(args, task, model_file)

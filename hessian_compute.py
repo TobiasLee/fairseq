@@ -5,7 +5,7 @@ for a given pytorch model using subsampled data.
 import torch
 
 from fairseq.data import iterators
-from fairseq.progress_bar import progress_bar
+from fairseq.progress_bar import build_progress_bar
 from plot.power_iter import Operator, deflated_power_iteration
 # from hessian_eigenthings.lanczos import lanczos
 
@@ -27,20 +27,24 @@ class HVPOperator(Operator):
             model,
             epoch_itr,
             criterion,
+            optimizer=None, 
             use_gpu=True,
+            full_dataset=True
     ):
         size = int(sum(p.numel() for p in model.parameters()))
         super(HVPOperator, self).__init__(size)
         self.args = args
         self.grad_vec = torch.zeros(size)
         self.model = model
-        if use_gpu and torch.cuda.is_avaliable():
+        self.optimizer = optimizer 
+        if use_gpu and torch.cuda.is_available():
             self.model = self.model.cuda()
         self.epoch_itr = epoch_itr
         # Make a copy since we will go over it a bunch
         self.criterion = criterion
         self.use_gpu = use_gpu
         self.task = task
+        self.full_dataset=True
 
     def apply(self, vec):
         """
@@ -100,7 +104,7 @@ class HVPOperator(Operator):
             else self.args.update_freq[-1]
         )
         itr = iterators.GroupedIterator(itr, update_freq)
-        progress = progress_bar.build_progress_bar(
+        progress = build_progress_bar(
             self.args, itr, self.epoch_itr.epoch, no_progress_bar='simple',
         )
 
@@ -127,7 +131,8 @@ class HVPOperator(Operator):
                 else:
                     grad_vec = torch.cat([g.contiguous().view(-1) for g in grad_dict])
                 num_chunks += 1
-        grad_vec /= num_chunks
+        print('num chunks:%d' % num_chunks)
+        # grad_vec /= num_chunks
         self.grad_vec = grad_vec
         return self.grad_vec
 
@@ -138,6 +143,7 @@ def compute_hessian_eigenthings(
         model,
         epoch_itr,
         criterion,
+        optimizer=None,
         num_eigenthings=10,
         mode="power_iter",
         use_gpu=True,
@@ -172,6 +178,7 @@ def compute_hessian_eigenthings(
         model,
         epoch_itr,
         criterion,
+        optimizer=optimizer,
         use_gpu=use_gpu,
     )
     eigenvals, eigenvecs = None, None

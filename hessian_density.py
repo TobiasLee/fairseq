@@ -31,16 +31,6 @@ def main(args, init_distributed=False):
         args.distributed_rank = distributed_utils.distributed_init(args)
 
     task = tasks.setup_task(args)
-    try:
-        args.xmin, args.xmax, args.xnum = [int(a) for a in args.x.split(':')]
-        print(args.xmin, args.xmax, args.xnum)
-        args.ymin, args.ymax, args.ynum = (None, None, None)
-        if args.y:
-            args.ymin, args.ymax, args.ynum = [int(a) for a in args.y.split(':')]
-            assert args.ymin and args.ymax and args.ynum, \
-                'You specified some arguments for the y axis, but not all'
-    except:
-        raise Exception('Improper format for x- or y-coordinates. Try something like -1:1:51')
 
     # Load valid dataset (we load training data below, based on the latest checkpoint)
     for valid_sub_split in args.valid_subset.split(','):
@@ -48,7 +38,7 @@ def main(args, init_distributed=False):
 
     # Build model and criterion
     model = task.build_model(args)
-    # model = model.cuda() -> cause segmentation fault ?
+    model = model.cuda() # -> cause segmentation fault ?
     criterion = task.build_criterion(args)
     print('| num. model params: {} (num. trained: {})'.format(
         sum(p.numel() for p in model.parameters()),
@@ -57,9 +47,7 @@ def main(args, init_distributed=False):
 
     # Build trainer
     trainer = Trainer(args, task, model, criterion)
-    if args.init_model:
-        print('project no warmup ckpt trace')
-        # args.restore_file = 'random_ckpt.pt'
+
     _ = trainer.load_checkpoint(  # use this code to restore ckpt
         args.restore_file,
         args.reset_optimizer,
@@ -74,6 +62,7 @@ def main(args, init_distributed=False):
         model,
         epoch_itr,
         criterion,
+        optimizer=trainer.optimizer,
         num_eigenthings=10,
         mode="power_iter",
         use_gpu=torch.cuda.is_available()
