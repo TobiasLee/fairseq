@@ -38,7 +38,7 @@ def main(args, init_distributed=False):
 
     # Build model and criterion
     model = task.build_model(args)
-    model = model.cuda() # -> cause segmentation fault ?
+    #model = model.cuda() # -> cause segmentation fault ?
     criterion = task.build_criterion(args)
     print('| num. model params: {} (num. trained: {})'.format(
         sum(p.numel() for p in model.parameters()),
@@ -65,7 +65,7 @@ def main(args, init_distributed=False):
         optimizer=trainer.optimizer,
         num_eigenthings=10,
         mode="power_iter",
-        use_gpu=torch.cuda.is_available()
+        use_gpu=False #torch.cuda.is_available()
     )
     print(eigenvals)
     print(eigenvecs)
@@ -73,6 +73,9 @@ def main(args, init_distributed=False):
 
 def cli_main():
     parser = options.get_training_parser()
+
+    parser.add_argument('--hessian', action='store_true', default=False, help='do not do optimizer.backwad()' )
+
     args = options.parse_args_and_arch(parser)
     main(args)
 

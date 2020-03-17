@@ -17,7 +17,7 @@ mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
 
 #--encoder-normalize-before --decoder-normalize-before \
-CUDA_VISIBLE_DEVICES=$GPU python3 hessian_density.py  $DATA_PATH \
+CUDA_VISIBLE_DEVICES=$GPU python3 hessian_density.py  $DATA_PATH --hessian --cpu\
     --seed $SEED   \
     -a $ARCH  --share-all-embeddings --train-subset valid --valid-subset valid\
     --optimizer adam --lr $LR \
