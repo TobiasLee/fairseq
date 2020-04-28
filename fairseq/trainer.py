@@ -20,6 +20,8 @@ from fairseq.file_io import PathManager
 from fairseq.logging import meters, metrics
 from fairseq.nan_detector import NanDetector
 from fairseq.optim import lr_scheduler
+from fairseq.optim.lr_scheduler.adaptive_warmup import AdaptiveWarmupScheduler
+
 
 
 logger = logging.getLogger(__name__)
@@ -167,7 +169,11 @@ class Trainer(object):
 
         # We should initialize the learning rate scheduler immediately after
         # building the optimizer, so that the initial learning rate is set.
-        self._lr_scheduler = lr_scheduler.build_lr_scheduler(self.args, self.optimizer)
+        if self.args.lr_scheduler == "adaptive_warmup":  # using adaptive warmup
+            self._lr_scheduler = AdaptiveWarmupScheduler(self.args, self.optimizer, self.model)
+        else:
+            self._lr_scheduler = lr_scheduler.build_lr_scheduler(self.args, self.optimizer)
+       # self._lr_scheduler = lr_scheduler.build_lr_scheduler(self.args, self.optimizer)
         self._lr_scheduler.step_update(0)
 
     def save_checkpoint(self, filename, extra_state):
@@ -432,9 +438,16 @@ class Trainer(object):
             # check that grad norms are consistent across workers
             if not self.args.use_bmuf and self.args.distributed_wrapper != 'SlowMo':
                 self._check_grad_norms(grad_norm)
-
             # take an optimization step
-            self.optimizer.step()
+            updated = False
+            if isinstance(self.lr_scheduler, AdaptiveWarmupScheduler):
+                self.set_num_updates(self.get_num_updates() + 1)
+                updated = True
+                self.optimizer.step()
+            else:
+                self.optimizer.step()
+            # take an optimization step
+
         except FloatingPointError:
             # re-run the forward and backward pass with hooks attached to print out where it fails
             with NanDetector(self.model):
@@ -462,7 +475,8 @@ class Trainer(object):
                 self.model.perform_additional_optimizer_actions(self.optimizer.optimizer)
 
         if not overflow or self.args.distributed_wrapper == 'SlowMo':
-            self.set_num_updates(self.get_num_updates() + 1)
+            if not updated:
+                self.set_num_updates(self.get_num_updates() + 1)
 
             # log stats
             logging_output = self._reduce_and_log_stats(
