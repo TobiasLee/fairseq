@@ -34,8 +34,8 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
                 ' Consider --lr-scheduler=fixed instead.'
             )
         warmup_end_lr = args.lr[0]
-        #if args.warmup_init_lr < 0:
-        #    args.warmup_init_lr = 0 if args.warmup_updates > 0 else warmup_end_lr
+        if args.warmup_init_lr < 0:
+            args.warmup_init_lr = 0 if args.warmup_updates > 0 else warmup_end_lr
 
         # initial learning rate
         self.lr, self.global_lr = args.lr[0], args.lr[0]
@@ -60,8 +60,8 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         # fmt: off
         parser.add_argument('--warmup-updates', default=4000, type=int, metavar='N',
                              help='warmup the learning rate linearly for the first N updates')
-        # parser.add_argument('--warmup-init-lr', default=-1, type=float, metavar='LR',
-        #                     help='initial learning rate during warmup phase; default is args.lr')
+        parser.add_argument('--warmup-init-lr', default=-1, type=float, metavar='LR',
+                             help='initial learning rate during warmup phase; default is args.lr')
         parser.add_argument('--bound_lo', default=0.75, type=float, metavar='BLO',
                             help='ratio lower bound')
         parser.add_argument('--bound_hi', default=1.5, type=float, metavar='BHI',
@@ -84,7 +84,7 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         if num_updates == 0:
             self.optimizer.set_lr(self.lr)
             return self.lr
-        if num_updates > self.warmup_updates:
+        if num_updates > self.args.warmup_updates:
             self.lr = self.decay_factor * num_updates**-0.5
             self.optimizer.set_lr(self.lr)
             return self.lr 

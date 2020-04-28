@@ -1,10 +1,10 @@
 DATA_PATH=data-bin/fairseq-iwslt.tokenized.en-vi.bpe10k 
 ARCH=transformer_wmt_en_de
-GPU="6,7"
+GPU="2"
 for seed in 1234 2345 3456 4567 5678 
 do
-OUTPUT_PATH=checkpoints/IWSLT/en-vi/adawu_seed$seed
-RESULT_PATH=results/IWSLT/en-vi/adawu_seed$seed
+OUTPUT_PATH=checkpoints/en-vi/adawu_seed$seed
+RESULT_PATH=results/en-vi/adawu_seed$seed
 
 mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
@@ -16,7 +16,7 @@ CUDA_VISIBLE_DEVICES=$GPU python3 train.py $DATA_PATH  -a $ARCH --share-decoder-
     --criterion label_smoothed_cross_entropy --label-smoothing 0.1 \
     --max-tokens 4096 --save-dir $OUTPUT_PATH \
     --tensorboard-logdir $OUTPUT_PATH --max-epoch 20 --max-update 0 \
-    --log-format simple --log-interval 5   2>&1 | tee $RESULT_PATH/train_log.txt
+    --log-format simple --log-interval 500   2>&1 | tee $OUTPUT_PATH/train_log.txt
 
 
 CUDA_VISIBLE_DEVICES=$GPU python3 scripts/average_checkpoints.py --inputs $OUTPUT_PATH \

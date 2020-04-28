@@ -1,17 +1,17 @@
 DATA_PATH=data-bin/fairseq-iwslt.tokenized.en-vi.bpe10k 
 ARCH=transformer_wmt_en_de
-GPU="6,7"
+GPU="3"
 for seed in 1234 2345 3456 4567 5678 
 do
 
-OUTPUT_PATH=checkpoints/IWSLT/en-vi/wu_seed$seed
-RESULT_PATH=results/IWSLT/en-vi/wu_seed$seed
+OUTPUT_PATH=checkpoints/en-vi/wu_seed$seed
+RESULT_PATH=results/en-vi/wu_seed$seed
 
 mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
 
 CUDA_VISIBLE_DEVICES=$GPU python3 train.py $DATA_PATH  -a $ARCH --share-decoder-input-output-embed \
-    --seed $seed  --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 --fp16 \
+    --seed $seed  --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
     --lr 1e-3 --lr-scheduler inverse_sqrt --warmup-updates 8000 \
     --dropout 0.1 --attention-dropout 0.1 --activation-dropout 0.1 \
     --criterion label_smoothed_cross_entropy --label-smoothing 0.1 \
