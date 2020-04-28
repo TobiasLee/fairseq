@@ -38,7 +38,7 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         #    args.warmup_init_lr = 0 if args.warmup_updates > 0 else warmup_end_lr
 
         # initial learning rate
-        self.lr = args.lr[0]
+        self.lr, self.global_lr = args.lr[0], args.lr[0]
         self.optimizer.set_lr(self.lr)
         self.weight_indicators = {'lo': 'decoder.layers.0.fc2.weight',
                                   'hi': 'decoder.layers.%d.fc2.weight' % (args.decoder_layers - 1)}
@@ -52,13 +52,14 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         # initial scale factor
         self.scale_factor = 1.0
         self.ratio_exp_avg = 1.0
-
+        # after wu steps, we change back to inverst square root decay 
+        self.decay_factor = warmup_end_lr * args.warmup_updates**0.5
     @staticmethod
     def add_args(parser):
         """Add arguments to the parser for this LR scheduler."""
         # fmt: off
-        # parser.add_argument('--warmup-updates', default=4000, type=int, metavar='N',
-        #                     help='warmup the learning rate linearly for the first N updates')
+        parser.add_argument('--warmup-updates', default=4000, type=int, metavar='N',
+                             help='warmup the learning rate linearly for the first N updates')
         # parser.add_argument('--warmup-init-lr', default=-1, type=float, metavar='LR',
         #                     help='initial learning rate during warmup phase; default is args.lr')
         parser.add_argument('--bound_lo', default=0.75, type=float, metavar='BLO',
@@ -83,7 +84,10 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         if num_updates == 0:
             self.optimizer.set_lr(self.lr)
             return self.lr
-
+        if num_updates > self.warmup_updates:
+            self.lr = self.decay_factor * num_updates**-0.5
+            self.optimizer.set_lr(self.lr)
+            return self.lr 
         # adaptive warmup learning rate
         layer_lo, layer_hi = None, None
         for name, param in self.model.named_parameters():
@@ -109,6 +113,6 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
             self.scale_factor = self.scale_factor * self.beta4 + (1 - self.beta4) * 1.0
             # update ratio avg
             self.ratio_exp_avg = self.beta3 * self.ratio_exp_avg + (1 - self.beta3) * current_ratio
-        self.optimizer.set_lr(self.scale_factor * self.lr)
-        return self.scale_factor * self.lr
+        self.optimizer.set_lr(self.scale_factor * self.global_lr)
+        return self.scale_factor * self.global_lr
 
