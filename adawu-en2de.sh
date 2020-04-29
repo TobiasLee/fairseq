@@ -9,8 +9,8 @@ for SEED in 1234 2345 3456 4567 5678
 do
 echo "seed=$SEED"
 echo "warm up updates=$WU"
-OUTPUT_PATH=checkpoints/en-de/adawu_seed$seed
-RESULT_PATH=results/en-de/adawu_seed$seed
+OUTPUT_PATH=checkpoints/en-de/adawu_seed$SEED
+RESULT_PATH=results/en-de/adawu_seed$SEED
 mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
 
