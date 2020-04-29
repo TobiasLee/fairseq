@@ -1,5 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
-#
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -9,19 +7,14 @@ from . import FairseqLRScheduler, register_lr_scheduler
 @register_lr_scheduler('adaptive_warmup')
 class AdaptiveWarmupScheduler(FairseqLRScheduler):
     """Decay the LR based on the inverse square root of the update number.
-
     We also support a warmup phase where we linearly increase the learning rate
     from some initial learning rate (``--warmup-init-lr``) until the configured
     learning rate (``--lr``). Thereafter we decay proportional to the number of
     updates, with a decay factor set to align with the configured learning rate.
-
     During warmup::
-
       lrs = torch.linspace(args.warmup_init_lr, args.lr, args.warmup_updates)
       lr = lrs[update_num]
-
     After warmup::
-
       decay_factor = args.lr * sqrt(args.warmup_updates)
       lr = decay_factor / sqrt(update_num)
     """
@@ -51,17 +44,18 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         self.beta4 = args.beta4
         # initial scale factor
         self.scale_factor = 1.0
-        self.ratio_exp_avg = 1.0
-        # after wu steps, we change back to inverst square root decay 
-        self.decay_factor = warmup_end_lr * args.warmup_updates**0.5
+        self.ratio_exp_avg = 0.0
+        # after wu steps, we change back to inverst square root decay
+        self.decay_factor = warmup_end_lr * args.warmup_updates ** 0.5
+
     @staticmethod
     def add_args(parser):
         """Add arguments to the parser for this LR scheduler."""
         # fmt: off
         parser.add_argument('--warmup-updates', default=4000, type=int, metavar='N',
-                             help='warmup the learning rate linearly for the first N updates')
+                            help='warmup the learning rate linearly for the first N updates')
         parser.add_argument('--warmup-init-lr', default=-1, type=float, metavar='LR',
-                             help='initial learning rate during warmup phase; default is args.lr')
+                            help='initial learning rate during warmup phase; default is args.lr')
         parser.add_argument('--bound_lo', default=0.75, type=float, metavar='BLO',
                             help='ratio lower bound')
         parser.add_argument('--bound_hi', default=1.5, type=float, metavar='BHI',
@@ -80,19 +74,15 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
 
     def step_update(self, num_updates):
         """Update the learning rate after each update."""
-        # initial setting
-        if num_updates == 0:
+        if num_updates > self.args.warmup_updates + 1:  # our steps start from 1
+            self.lr = self.decay_factor * num_updates ** -0.5
             self.optimizer.set_lr(self.lr)
             return self.lr
-        if num_updates > self.args.warmup_updates:
-            self.lr = self.decay_factor * num_updates**-0.5
-            self.optimizer.set_lr(self.lr)
-            return self.lr 
-        # adaptive warmup learning rate
+            # adaptive warmup learning rate
         layer_lo, layer_hi = None, None
         for name, param in self.model.named_parameters():
             if self.weight_indicators['lo'] in name:
-                if len(self.optimizer.optimizer.state[param]) ==0:
+                if len(self.optimizer.optimizer.state[param]) == 0:
                     self.optimizer.set_lr(self.lr)
                     return self.lr
                 layer_lo = self.optimizer.optimizer.state[param]['exp_avg'].data.float().norm()
@@ -101,12 +91,11 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
 
         # assert layer_lo is not None
         current_ratio = layer_lo.item() / layer_hi.item()  # current ratio is a scalar
-        if num_updates == 1:
-            self.scale_factor = 1  # step 1
-            self.ratio_exp_avg = self.beta3 * 0 + (1 - self.beta3) * current_ratio
-        elif num_updates > 1:
-            decay_ratio = current_ratio * (1 - self.beta3 ** num_updates) / self.ratio_exp_avg
-            # print(decay_ratio)
+        if num_updates == 2:
+            self.scale_factor = 1  # first compute ratio
+            self.ratio_exp_avg = self.beta3 * self.ratio_exp_avg + (1 - self.beta3) * current_ratio
+        elif num_updates > 2:
+            decay_ratio = current_ratio * (1 - self.beta3 ** (num_updates - 1)) / (self.ratio_exp_avg + 1e-6)
             if decay_ratio > self.bound_hi or decay_ratio < self.bound_lo:
                 self.scale_factor /= 2
             # update s_t for learning rate adjustment
