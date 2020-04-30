@@ -475,7 +475,7 @@ class Trainer(object):
                 self.model.perform_additional_optimizer_actions(self.optimizer.optimizer)
 
         if not overflow or self.args.distributed_wrapper == 'SlowMo':
-            if not updated:
+            if not updated :
                 self.set_num_updates(self.get_num_updates() + 1)
 
             # log stats
