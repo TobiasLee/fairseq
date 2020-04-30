@@ -75,15 +75,13 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
                     break
                 else:
                     layer_hi = param.grad.data.float().norm().item()
-
-
-        # assert layer_lo is not None
+        
         current_ratio = layer_lo / layer_hi  # current ratio is a scalar
         if num_updates == 1:
             self.scale_factor = 1  # first compute ratio
             self.ratio_exp_avg = self.beta3 * self.ratio_exp_avg + (1 - self.beta3) * current_ratio
         elif 1 < num_updates < self.args.warmup_updates + 1:
-            decay_ratio = current_ratio * (1 - self.beta3 ** num_updates) / (self.ratio_exp_avg + 1e-6)
+            decay_ratio = current_ratio * (1 - self.beta3 ** (num_updates-1)) / (self.ratio_exp_avg + 1e-9)
             if decay_ratio > self.bound_hi or decay_ratio < self.bound_lo:
                 self.scale_factor /= 2
             # update s_t for learning rate adjustment
@@ -93,8 +91,8 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         elif self.args.warmup_updates + 1 <= num_updates:  # finish adaptive warmup steps,  we do not do decay anymore
             self.scale_factor = self.scale_factor * self.beta4 + (1 - self.beta4) * 1.0  # back to 1 within 100 steps
             self.lr = self.decay_factor * num_updates ** -0.5
-            self.optimizer.set_lr(self.lr * self.scale_factor)
-            return self.lr * self.scale_factor
-        self.optimizer.set_lr(self.scale_factor * self.global_lr)
-        return self.scale_factor * self.global_lr
+            #self.optimizer.set_lr(self.lr * self.scale_factor)
+            #return self.lr * self.scale_factor
+        self.optimizer.set_lr(self.scale_factor * self.lr)
+        return self.scale_factor * self.lr
 
