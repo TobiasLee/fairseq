@@ -1,6 +1,6 @@
 DATA_PATH=data-bin/fairseq-iwslt.tokenized.en-vi.bpe10k 
 ARCH=transformer_wmt_en_de
-GPU="2"
+GPU="3"
 WU=8000
 for seed in 1234 2345 3456 4567 5678 
 do
@@ -12,12 +12,12 @@ mkdir -p $RESULT_PATH
 
 CUDA_VISIBLE_DEVICES=$GPU python3 train.py $DATA_PATH  -a $ARCH --share-decoder-input-output-embed \
     --seed $seed  --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0  \
-    --lr 1e-3 --lr-scheduler adaptive_warmup --warmup-updates $WU\
+    --lr 1e-3 --lr-scheduler adaptive_warmup --warmup-updates $WU --empty-cache-freq 500 \
     --dropout 0.1 --attention-dropout 0.1 --activation-dropout 0.1 \
     --criterion label_smoothed_cross_entropy --label-smoothing 0.1 \
     --max-tokens 4096 --save-dir $OUTPUT_PATH \
     --tensorboard-logdir $OUTPUT_PATH --max-epoch 20 --max-update 0 \
-    --log-format simple --log-interval 50   2>&1 | tee $OUTPUT_PATH/train_log.txt
+    --log-format simple --log-interval 5   2>&1 | tee $OUTPUT_PATH/train_log.txt
 
 
 CUDA_VISIBLE_DEVICES=$GPU python3 scripts/average_checkpoints.py --inputs $OUTPUT_PATH \
