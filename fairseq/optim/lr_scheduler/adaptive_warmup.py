@@ -24,7 +24,13 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
                                   'hi': 'decoder.layers.%d.fc2.weight' % (args.decoder_layers - 1)}
         assert model is not None, "We need a model reference for getting param stats"
         self.model = model
-        # hyper params for ada-warmup
+        self.lo_param, self.hi_param = None, None 
+        for name, param in self.model.named_parameters():
+            if self.weight_indicators['lo'] in name:
+                self.lo_param = param  
+            if self.weight_indicators['hi'] in name:
+                self.hi_param = param        
+# hyper params for ada-warmup
         self.bound_lo = args.bound_lo
         self.bound_hi = args.bound_hi
         self.beta3 = args.beta3
@@ -64,20 +70,17 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
 
         # adaptive warmup learning rate
         layer_lo, layer_hi = 1, 1
-        for name, param in self.model.named_parameters():
-            if self.weight_indicators['lo'] in name:
-                if param.grad is None:
-                    break 
-                else:
-                    layer_lo = param.grad.data.float().norm().item()
-            if self.weight_indicators['hi'] in name:
-                if param.grad is None:
-                    break
-                else:
-                    layer_hi = param.grad.data.float().norm().item()
+        
+        if self.lo_param.grad is not None:
+            layer_lo = self.lo_param.grad.data.float().norm().item()
+        if self.hi_param.grad is not None:
+            layer_hi = self.hi_param.grad.data.float().norm().item()         
+
+               # else:
+               #     layer_hi = param.grad.data.float().norm().item()
         
         current_ratio = layer_lo / layer_hi  # current ratio is a scalar
-        #print(num_updates, current_ratio)
+        # print(num_updates, current_ratio)
         del layer_hi, layer_lo 
         if num_updates == 1:
             self.scale_factor = 1  # first compute ratio
@@ -90,7 +93,7 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
             self.scale_factor = self.scale_factor * self.beta4 + (1 - self.beta4) * 1.0
             # update ratio avg
             self.ratio_exp_avg = self.beta3 * self.ratio_exp_avg + (1 - self.beta3) * current_ratio
-            #print("scale factor: %.9f  ratio_exp_avg: %.9f" % (self.scale_factor, self.ratio_exp_avg))
+            # print("scale factor: %.9f  ratio_exp_avg: %.9f" % (self.scale_factor, self.ratio_exp_avg))
         elif self.args.warmup_updates + 1 <= num_updates:  # finish adaptive warmup steps,  we do not do decay anymore
             self.scale_factor = self.scale_factor * self.beta4 + (1 - self.beta4) * 1.0  # back to 1 within 100 steps
             self.lr = self.decay_factor * num_updates ** -0.5
