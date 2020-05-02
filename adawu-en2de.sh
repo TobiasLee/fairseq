@@ -5,33 +5,33 @@ LR=0.0005
 GPU=0
 WU=4000
 
-BETA_3=0.99
-BETA_4=0.98
+#BETA_3=0.99
+# BETA_4=0.98
 
-for SEED in 1234 2345 3456 4567 5678 
+for SEED in 5678 #1234 2345 3456 4567 5678 
 do
 echo "seed=$SEED"
 echo "warm up updates=$WU"
-OUTPUT_PATH=checkpoints/en-de/adawu_seed${SEED}_WU${WU}_B3${BETA_3}_B4${BETA_4}
-RESULT_PATH=results/en-de/adawu_seed${SEED}_WU${WU}_B3${BETA_3}_B4${BETA_4}
+OUTPUT_PATH=checkpoints/en-de/adawu_seed${SEED}_WU${WU}_test #B3${BETA_3}_B4${BETA_4}
+RESULT_PATH=results/en-de/adawu_seed${SEED}_WU${WU}_test #B3${BETA_3}_B4${BETA_4}
 mkdir -p $OUTPUT_PATH
 mkdir -p $RESULT_PATH
 
+#--beta3 $BETA_3 --beta4 $BETA_4 \
 
-CUDA_VISIBLE_DEVICES=$GPU python3 train.py $DATA_PATH  \
+CUDA_VISIBLE_DEVICES=$GPU python3 train.py $DATA_PATH \
     --seed $SEED  \
     -a $ARCH  --share-all-embeddings  \
-    --optimizer adam --lr $LR  \
-    -s de -t en \
+    --optimizer adam --lr $LR  -s de -t en \
     --tensorboard-logdir $OUTPUT_PATH --empty-cache-freq 500\
-    --clip-norm 0.0 \
+    --clip-norm 0.0 --keep-last-epochs 30 \
     --label-smoothing 0.1 --dropout 0.3 --max-tokens 4096 \
     --lr-scheduler adaptive_warmup --weight-decay 0.0001 \
     --criterion label_smoothed_cross_entropy \
     --max-update 60000 \
     --warmup-updates $WU --warmup-init-lr $LR  \
     --adam-betas '(0.9, 0.98)' --save-dir $OUTPUT_PATH \
-    --no-progress-bar --log-interval 200 \
+    --no-progress-bar --log-interval 1 \
     --ddp-backend=no_c10d 2>&1 | tee -a $OUTPUT_PATH/train_log.txt 
     
 
