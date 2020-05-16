@@ -3,6 +3,8 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,6 +22,9 @@ from fairseq.modules import (
     TransformerSentenceEncoder,
 )
 from fairseq.modules.transformer_sentence_encoder import init_bert_params
+
+
+logger = logging.getLogger(__name__)
 
 
 @register_model('masked_lm')
@@ -59,10 +64,6 @@ class MaskedLMModel(BaseFairseqModel):
                             help='num encoder layers')
         parser.add_argument('--encoder-attention-heads', type=int, metavar='N',
                             help='num encoder attention heads')
-        parser.add_argument('--bias-kv', action='store_true',
-                            help='if set, adding a learnable bias kv')
-        parser.add_argument('--zero-attn', action='store_true',
-                            help='if set, pads attn with zero')
 
         # Arguments related to input and output embeddings
         parser.add_argument('--encoder-embed-dim', type=int, metavar='N',
@@ -108,14 +109,13 @@ class MaskedLMModel(BaseFairseqModel):
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance."""
-
         # make sure all arguments are present in older models
         base_architecture(args)
 
         if not hasattr(args, 'max_positions'):
             args.max_positions = args.tokens_per_sample
 
-        print("Model args: ", args)
+        logger.info(args)
 
         encoder = MaskedLMEncoder(args, task.dictionary)
         return cls(args, encoder)
@@ -150,8 +150,6 @@ class MaskedLMEncoder(FairseqEncoder):
             apply_bert_init=args.apply_bert_init,
             activation_fn=args.activation_fn,
             learned_pos_embedding=args.encoder_learned_pos,
-            add_bias_kv=args.bias_kv,
-            add_zero_attn=args.zero_attn,
         )
 
         self.share_input_output_embed = args.share_encoder_input_output_embed
@@ -275,8 +273,6 @@ def base_architecture(args):
     args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 4096)
     args.encoder_layers = getattr(args, 'encoder_layers', 6)
     args.encoder_attention_heads = getattr(args, 'encoder_attention_heads', 8)
-    args.bias_kv = getattr(args, 'bias_kv', False)
-    args.zero_attn = getattr(args, 'zero_attn', False)
 
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 1024)
     args.share_encoder_input_output_embed = getattr(args, 'share_encoder_input_output_embed', False)
@@ -308,8 +304,6 @@ def bert_base_architecture(args):
 
     args.encoder_attention_heads = getattr(args, 'encoder_attention_heads', 12)
     args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 3072)
-    args.bias_kv = getattr(args, 'bias_kv', False)
-    args.zero_attn = getattr(args, 'zero_attn', False)
 
     args.sentence_class_num = getattr(args, 'sentence_class_num', 2)
     args.sent_loss = getattr(args, 'sent_loss', True)
@@ -345,8 +339,6 @@ def xlm_architecture(args):
 
     args.encoder_attention_heads = getattr(args, 'encoder_attention_heads', 8)
     args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 4096)
-    args.bias_kv = getattr(args, 'bias_kv', False)
-    args.zero_attn = getattr(args, 'zero_attn', False)
 
     args.sent_loss = getattr(args, 'sent_loss', False)
 

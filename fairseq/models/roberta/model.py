@@ -6,6 +6,8 @@
 RoBERTa: A Robustly Optimized BERT Pretraining Approach.
 """
 
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -22,8 +24,12 @@ from fairseq.modules import (
     TransformerSentenceEncoder,
 )
 from fairseq.modules.transformer_sentence_encoder import init_bert_params
+from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 
 from .hub_interface import RobertaHubInterface
+
+
+logger = logging.getLogger(__name__)
 
 
 @register_model('roberta')
@@ -83,6 +89,15 @@ class RobertaModel(FairseqLanguageModel):
                             help='LayerDrop probability for encoder')
         parser.add_argument('--encoder-layers-to-keep', default=None,
                             help='which layers to *keep* when pruning as a comma-separated list')
+        # args for Training with Quantization Noise for Extreme Model Compression ({Fan*, Stock*} et al., 2020)
+        parser.add_argument('--quant-noise-pq', type=float, metavar='D', default=0,
+                            help='iterative PQ quantization noise at training time')
+        parser.add_argument('--quant-noise-pq-block-size', type=int, metavar='D', default=8,
+                            help='block size of quantization noise at training time')
+        parser.add_argument('--quant-noise-scalar', type=float, metavar='D', default=0,
+                            help='scalar quantization noise and scalar quantization at training time')
+        parser.add_argument('--untie-weights-roberta', action='store_true',
+                            help='Untie weights between embeddings and classifiers in RoBERTa')
 
     @classmethod
     def build_model(cls, args, task):
@@ -113,8 +128,8 @@ class RobertaModel(FairseqLanguageModel):
             prev_num_classes = self.classification_heads[name].out_proj.out_features
             prev_inner_dim = self.classification_heads[name].dense.out_features
             if num_classes != prev_num_classes or inner_dim != prev_inner_dim:
-                print(
-                    'WARNING: re-registering head "{}" with num_classes {} (prev: {}) '
+                logger.warning(
+                    're-registering head "{}" with num_classes {} (prev: {}) '
                     'and inner_dim {} (prev: {})'.format(
                         name, num_classes, prev_num_classes, inner_dim, prev_inner_dim
                     )
@@ -125,6 +140,8 @@ class RobertaModel(FairseqLanguageModel):
             num_classes,
             self.args.pooler_activation_fn,
             self.args.pooler_dropout,
+            self.args.quant_noise_pq,
+            self.args.quant_noise_pq_block_size,
         )
 
     @property
@@ -167,8 +184,8 @@ class RobertaModel(FairseqLanguageModel):
                     self.register_classification_head(head_name, num_classes, inner_dim)
             else:
                 if head_name not in current_head_names:
-                    print(
-                        'WARNING: deleting classification head ({}) from checkpoint '
+                    logger.warning(
+                        'deleting classification head ({}) from checkpoint '
                         'not present in current model: {}'.format(head_name, k)
                     )
                     keys_to_delete.append(k)
@@ -176,8 +193,8 @@ class RobertaModel(FairseqLanguageModel):
                     num_classes != self.classification_heads[head_name].out_proj.out_features
                     or inner_dim != self.classification_heads[head_name].dense.out_features
                 ):
-                    print(
-                        'WARNING: deleting classification head ({}) from checkpoint '
+                    logger.warning(
+                        'deleting classification head ({}) from checkpoint '
                         'with different dimensions than current model: {}'.format(head_name, k)
                     )
                     keys_to_delete.append(k)
@@ -190,55 +207,8 @@ class RobertaModel(FairseqLanguageModel):
             cur_state = self.classification_heads.state_dict()
             for k, v in cur_state.items():
                 if prefix + 'classification_heads.' + k not in state_dict:
-                    print('Overwriting', prefix + 'classification_heads.' + k)
+                    logger.info('Overwriting ' + prefix + 'classification_heads.' + k)
                     state_dict[prefix + 'classification_heads.' + k] = v
-
-
-@register_model('xlmr')
-class XLMRModel(RobertaModel):
-    @classmethod
-    def hub_models(cls):
-        return {
-            'xlmr.base': 'http://dl.fbaipublicfiles.com/fairseq/models/xlmr.base.tar.gz',
-            'xlmr.large': 'http://dl.fbaipublicfiles.com/fairseq/models/xlmr.large.tar.gz',
-        }
-
-    @classmethod
-    def from_pretrained(cls, model_name_or_path, checkpoint_file='model.pt', data_name_or_path='.', bpe='sentencepiece', **kwargs):
-        from fairseq import hub_utils
-        x = hub_utils.from_pretrained(
-            model_name_or_path,
-            checkpoint_file,
-            data_name_or_path,
-            archive_map=cls.hub_models(),
-            bpe=bpe,
-            load_checkpoint_heads=True,
-            **kwargs,
-        )
-        return RobertaHubInterface(x['args'], x['task'], x['models'][0])
-
-
-@register_model('camembert')
-class CamembertModel(RobertaModel):
-    @classmethod
-    def hub_models(cls):
-        return {
-            'camembert.v0': 'http://dl.fbaipublicfiles.com/fairseq/models/camembert.v0.tar.gz',
-        }
-
-    @classmethod
-    def from_pretrained(cls, model_name_or_path, checkpoint_file='model.pt', data_name_or_path='.', bpe='sentencepiece', **kwargs):
-        from fairseq import hub_utils
-        x = hub_utils.from_pretrained(
-            model_name_or_path,
-            checkpoint_file,
-            data_name_or_path,
-            archive_map=cls.hub_models(),
-            bpe=bpe,
-            load_checkpoint_heads=True,
-            **kwargs,
-        )
-        return RobertaHubInterface(x['args'], x['task'], x['models'][0])
 
 
 class RobertaLMHead(nn.Module):
@@ -272,12 +242,14 @@ class RobertaLMHead(nn.Module):
 class RobertaClassificationHead(nn.Module):
     """Head for sentence-level classification tasks."""
 
-    def __init__(self, input_dim, inner_dim, num_classes, activation_fn, pooler_dropout):
+    def __init__(self, input_dim, inner_dim, num_classes, activation_fn, pooler_dropout, q_noise=0, qn_block_size=8):
         super().__init__()
         self.dense = nn.Linear(input_dim, inner_dim)
         self.activation_fn = utils.get_activation_fn(activation_fn)
         self.dropout = nn.Dropout(p=pooler_dropout)
-        self.out_proj = nn.Linear(inner_dim, num_classes)
+        self.out_proj = apply_quant_noise_(
+            nn.Linear(inner_dim, num_classes), q_noise, qn_block_size
+        )
 
     def forward(self, features, **kwargs):
         x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
@@ -324,12 +296,16 @@ class RobertaEncoder(FairseqDecoder):
             encoder_normalize_before=True,
             apply_bert_init=True,
             activation_fn=args.activation_fn,
+            q_noise=args.quant_noise_pq,
+            qn_block_size=args.quant_noise_pq_block_size,
         )
+        args.untie_weights_roberta = getattr(args, 'untie_weights_roberta', False)
+
         self.lm_head = RobertaLMHead(
             embed_dim=args.encoder_embed_dim,
             output_dim=len(dictionary),
             activation_fn=args.activation_fn,
-            weight=self.sentence_encoder.embed_tokens.weight,
+            weight=self.sentence_encoder.embed_tokens.weight if not args.untie_weights_roberta else None,
         )
 
     def forward(self, src_tokens, features_only=False, return_all_hiddens=False, masked_tokens=None, **unused):
@@ -408,5 +384,4 @@ def xlm_architecture(args):
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 1280)
     args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 1280*4)
     args.encoder_attention_heads = getattr(args, 'encoder_attention_heads', 16)
-
     base_architecture(args)

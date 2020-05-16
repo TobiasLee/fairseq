@@ -3,17 +3,24 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import os
 import pickle
+import random
 import socket
 import struct
 import subprocess
 import warnings
+from collections import OrderedDict
+from typing import Any, Dict, Mapping
 
 import torch
 import torch.distributed as dist
 
 from fairseq import utils
+
+
+logger = logging.getLogger(__name__)
 
 
 def is_master(args):
@@ -76,16 +83,18 @@ def distributed_init(args):
     if torch.distributed.is_initialized():
         warnings.warn('Distributed is already initialized, cannot initialize twice!')
     else:
-        print('| distributed init (rank {}): {}'.format(
-            args.distributed_rank, args.distributed_init_method), flush=True)
+        logger.info('distributed init (rank {}): {}'.format(
+            args.distributed_rank, args.distributed_init_method,
+        ))
         dist.init_process_group(
             backend=args.distributed_backend,
             init_method=args.distributed_init_method,
             world_size=args.distributed_world_size,
             rank=args.distributed_rank,
         )
-        print('| initialized host {} as rank {}'.format(
-            socket.gethostname(), args.distributed_rank), flush=True)
+        logger.info('initialized host {} as rank {}'.format(
+            socket.gethostname(), args.distributed_rank,
+        ))
 
         # perform a dummy all-reduce to initialize the NCCL communicator
         if torch.cuda.is_available():
@@ -93,23 +102,75 @@ def distributed_init(args):
         else:
             dist.all_reduce(torch.zeros(1))
 
-        suppress_output(is_master(args))
+        if is_master(args):
+            logging.getLogger().setLevel(logging.INFO)
+        else:
+            logging.getLogger().setLevel(logging.WARNING)
 
     args.distributed_rank = torch.distributed.get_rank()
+
+    if args.model_parallel_size > 1:
+        try:
+            from fairseq.model_parallel.megatron.mpu import (
+                get_model_parallel_rank,
+                initialize_model_parallel,
+                model_parallel_cuda_manual_seed,
+            )
+        except ImportError:
+            raise ImportError(
+                '\n\nPlease install the megatron submodule:'
+                '\n\n  git submodule update --init '
+                'fairseq/model_parallel/megatron'
+            )
+        initialize_model_parallel(args.model_parallel_size)
+        model_parallel_cuda_manual_seed(args.seed)
+        model_part_number = get_model_parallel_rank()
+        args.checkpoint_suffix += '-model_part-{0}'.format(model_part_number)
     return args.distributed_rank
 
 
-def suppress_output(is_master):
-    """Suppress printing on the current device. Force printing with `force=True`."""
-    import builtins as __builtin__
-    builtin_print = __builtin__.print
+def _distributed_main(i, main, args, kwargs):
+    args.device_id = i
+    if torch.cuda.is_available() and not args.cpu:
+        torch.cuda.set_device(args.device_id)
+    if args.distributed_rank is None:  # torch.multiprocessing.spawn
+        args.distributed_rank = kwargs.get('start_rank', 0) + i
 
-    def print(*args, **kwargs):
-        force = kwargs.pop('force', False)
-        if is_master or force:
-            builtin_print(*args, **kwargs)
+    args.distributed_rank = distributed_init(args)
+    main(args, **kwargs)
 
-    __builtin__.print = print
+
+def call_main(args, main, **kwargs):
+    if args.distributed_init_method is None:
+        infer_init_method(args)
+
+    if args.distributed_init_method is not None:
+        # distributed main
+        if torch.cuda.device_count() > 1 and not args.distributed_no_spawn:
+            start_rank = args.distributed_rank
+            args.distributed_rank = None  # assign automatically
+            kwargs['start_rank'] = start_rank
+            torch.multiprocessing.spawn(
+                fn=_distributed_main,
+                args=(main, args, kwargs),
+                nprocs=torch.cuda.device_count(),
+            )
+        else:
+            _distributed_main(args.device_id, main, args, kwargs)
+    elif args.distributed_world_size > 1:
+        # fallback for single node with multiple GPUs
+        assert args.distributed_world_size <= torch.cuda.device_count()
+        port = random.randint(10000, 20000)
+        args.distributed_init_method = 'tcp://localhost:{port}'.format(port=port)
+        args.distributed_rank = None  # set based on device id
+        torch.multiprocessing.spawn(
+            fn=_distributed_main,
+            args=(main, args, kwargs),
+            nprocs=args.distributed_world_size,
+        )
+    else:
+        # single GPU main
+        main(args, kwargs)
 
 
 def get_rank():
@@ -154,6 +215,7 @@ def all_gather_list(data, group=None, max_size=16384):
     buffer.zero_()
     cpu_buffer = all_gather_list._cpu_buffer
 
+    data = utils.move_to_cpu(data)
     enc = pickle.dumps(data)
     enc_size = len(enc)
     header_size = 4  # size of header that contains the length of the encoded data
@@ -168,6 +230,7 @@ def all_gather_list(data, group=None, max_size=16384):
 
     all_reduce(buffer, group=group)
 
+    buffer = buffer.cpu()
     try:
         result = []
         for i in range(world_size):
@@ -183,5 +246,57 @@ def all_gather_list(data, group=None, max_size=16384):
             'that the workers have fallen out of sync somehow. Workers can fall out of '
             'sync if one of them runs out of memory, or if there are other conditions '
             'in your training script that can cause one worker to finish an epoch '
-            'while other workers are still iterating over their portions of the data.'
+            'while other workers are still iterating over their portions of the data. '
+            'Try rerunning with --ddp-backend=no_c10d and see if that helps.'
         )
+
+
+def all_reduce_dict(
+    data: Mapping[str, Any],
+    device,
+    group=None,
+) -> Dict[str, Any]:
+    """
+    AllReduce a dictionary of values across workers. We separately
+    reduce items that are already on the device and items on CPU for
+    better performance.
+
+    Args:
+        data (Mapping[str, Any]): dictionary of data to all-reduce, but
+            cannot be a nested dictionary
+        device (torch.device): device for the reduction
+        group (optional): group of the collective
+    """
+    data_keys = list(data.keys())
+
+    # We want to separately reduce items that are already on the
+    # device and items on CPU for performance reasons.
+    cpu_data = OrderedDict()
+    device_data = OrderedDict()
+    for k in data_keys:
+        t = data[k]
+        if not torch.is_tensor(t):
+            cpu_data[k] = torch.tensor(t, dtype=torch.double)
+        elif t.device.type != device.type:
+            cpu_data[k] = t.to(dtype=torch.double)
+        else:
+            device_data[k] = t.to(dtype=torch.double)
+
+    def _all_reduce_dict(data: OrderedDict):
+        if len(data) == 0:
+            return data
+        buf = torch.stack(list(data.values())).to(device=device)
+        all_reduce(buf, group=group)
+        return {k: buf[i] for i, k in enumerate(data)}
+
+    cpu_data = _all_reduce_dict(cpu_data)
+    device_data = _all_reduce_dict(device_data)
+
+    def get_from_stack(key):
+        if key in cpu_data:
+            return cpu_data[key]
+        elif key in device_data:
+            return device_data[key]
+        raise KeyError
+
+    return OrderedDict([(key, get_from_stack(key)) for key in data_keys])

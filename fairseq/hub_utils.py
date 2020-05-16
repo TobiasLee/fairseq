@@ -6,6 +6,7 @@
 
 import argparse
 import copy
+import logging
 import os
 from typing import List, Dict, Iterator, Tuple, Any
 
@@ -14,6 +15,9 @@ from torch import nn
 
 from fairseq import utils
 from fairseq.data import encoders
+
+
+logger = logging.getLogger(__name__)
 
 
 def from_pretrained(
@@ -65,7 +69,7 @@ def from_pretrained(
         utils.import_user_module(argparse.Namespace(user_dir=kwargs['user_dir']))
 
     models, args, task = checkpoint_utils.load_model_ensemble_and_task(
-        [os.path.join(model_path, cpt) for cpt in checkpoint_file.split(':')],
+        [os.path.join(model_path, cpt) for cpt in checkpoint_file.split(os.pathsep)],
         arg_overrides=kwargs,
     )
 
@@ -141,6 +145,7 @@ class GeneratorHubInterface(nn.Module):
         beam: int = 5,
         verbose: bool = False,
         skip_invalid_size_inputs=False,
+        inference_step_args=None,
         **kwargs
     ) -> List[List[Dict[str, torch.Tensor]]]:
         if torch.is_tensor(tokenized_sentences) and tokenized_sentences.dim() == 1:
@@ -153,12 +158,15 @@ class GeneratorHubInterface(nn.Module):
         gen_args.beam = beam
         for k, v in kwargs.items():
             setattr(gen_args, k, v)
-        generator = self.task.build_generator(gen_args)
+        generator = self.task.build_generator(self.models, gen_args)
 
+        inference_step_args = inference_step_args or {}
         results = []
         for batch in self._build_batches(tokenized_sentences, skip_invalid_size_inputs):
             batch = utils.apply_to_sample(lambda t: t.to(self.device), batch)
-            translations = self.task.inference_step(generator, self.models, batch)
+            translations = self.task.inference_step(
+                generator, self.models, batch, **inference_step_args
+            )
             for id, hypos in zip(batch["id"].tolist(), translations):
                 results.append((id, hypos))
 
@@ -172,15 +180,15 @@ class GeneratorHubInterface(nn.Module):
 
             for source_tokens, target_hypotheses in zip(tokenized_sentences, outputs):
                 src_str_with_unk = self.string(source_tokens)
-                print('S\t{}'.format(src_str_with_unk))
+                logger.info('S\t{}'.format(src_str_with_unk))
                 for hypo in target_hypotheses:
                     hypo_str = self.decode(hypo['tokens'])
-                    print('H\t{}\t{}'.format(hypo['score'], hypo_str))
-                    print('P\t{}'.format(
+                    logger.info('H\t{}\t{}'.format(hypo['score'], hypo_str))
+                    logger.info('P\t{}'.format(
                         ' '.join(map(lambda x: '{:.4f}'.format(x), hypo['positional_scores'].tolist()))
                     ))
                     if hypo['alignment'] is not None and getarg('print_alignment', False):
-                        print('A\t{}'.format(
+                        logger.info('A\t{}'.format(
                             ' '.join(map(lambda x: str(utils.item(x)), hypo['alignment'].int().cpu()))
                         ))
         return outputs

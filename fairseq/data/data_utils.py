@@ -9,11 +9,15 @@ except ImportError:
     from collections import Iterable
 import contextlib
 import itertools
+import logging
 import os
 import sys
 import types
 
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 def infer_language_pair(path):
@@ -34,7 +38,6 @@ def collate_tokens(values, pad_idx, eos_idx=None, left_pad=False, move_eos_to_be
     def copy_tensor(src, dst):
         assert dst.numel() == src.numel()
         if move_eos_to_beginning:
-            assert src[-1] == eos_idx
             dst[0] = eos_idx
             dst[1:] = src[:-1]
         else:
@@ -78,7 +81,7 @@ def load_indexed_dataset(path, dictionary, dataset_impl=None, combine=False, def
         )
         if dataset is None:
             break
-        print('| loaded {} examples from: {}'.format(len(dataset), path_k))
+        logger.info('loaded {} examples from: {}'.format(len(dataset), path_k))
         datasets.append(dataset)
         if not combine:
             break
@@ -187,8 +190,8 @@ def filter_by_size(indices, dataset, max_positions, raise_exception=False):
             'skip this example with --skip-invalid-size-inputs-valid-test'
         ).format(ignored[0], dataset.size(ignored[0]), max_positions))
     if len(ignored) > 0:
-        print((
-            '| WARNING: {} samples have invalid sizes and will be skipped, '
+        logger.warning((
+            '{} samples have invalid sizes and will be skipped, '
             'max_positions={}, first few sample ids={}'
         ).format(len(ignored), max_positions, ignored[:10]))
     return indices

@@ -3,9 +3,9 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
-
 import torch
+
+from fairseq import utils
 
 
 class FairseqOptimizer(object):
@@ -86,12 +86,9 @@ class FairseqOptimizer(object):
             if p.grad is not None:
                 p.grad.data.mul_(c)
 
-    def clip_grad_norm(self, max_norm):
+    def clip_grad_norm(self, max_norm, aggregate_norm_fn=None):
         """Clips gradient norm."""
-        if max_norm > 0:
-            return torch.nn.utils.clip_grad_norm_(self.params, max_norm)
-        else:
-            return math.sqrt(sum(p.grad.data.norm()**2 for p in self.params if p.grad is not None))
+        return utils.clip_grad_norm_(self.params, max_norm, aggregate_norm_fn)
 
     def clip_grad_norm_by_name(self, max_norm):
         """clip grad only on specific weights"""
@@ -114,6 +111,16 @@ class FairseqOptimizer(object):
     def supports_memory_efficient_fp16(self):
         if hasattr(self.optimizer, 'supports_memory_efficient_fp16'):
             return self.optimizer.supports_memory_efficient_fp16
+        return False
+
+    @property
+    def supports_flat_params(self):
+        """
+        Whether the optimizer supports collapsing of the model
+        parameters/gradients into a single contiguous Tensor.
+        """
+        if hasattr(self.optimizer, 'supports_flat_params'):
+            return self.optimizer.supports_flat_params
         return False
 
     def average_params(self):

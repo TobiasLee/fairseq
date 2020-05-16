@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import os
 
 import numpy as np
@@ -24,8 +25,10 @@ from fairseq.data import (
     StripTokenDataset,
     TruncateDataset,
 )
+from fairseq.tasks import FairseqTask, register_task
 
-from . import FairseqTask, register_task
+
+logger = logging.getLogger(__name__)
 
 
 @register_task('sentence_prediction')
@@ -43,7 +46,7 @@ class SentencePredictionTask(FairseqTask):
         parser.add_argument('data', metavar='FILE',
                             help='file prefix for data')
         parser.add_argument('--num-classes', type=int, default=-1,
-                            help='number of classes')
+                            help='number of classes or regression targets')
         parser.add_argument('--init-token', type=int, default=None,
                             help='add token at the beginning of each batch item')
         parser.add_argument('--separator-token', type=int, default=None,
@@ -89,7 +92,7 @@ class SentencePredictionTask(FairseqTask):
             os.path.join(args.data, 'input0', 'dict.txt'),
             source=True,
         )
-        print('| [input] dictionary: {} types'.format(len(data_dict)))
+        logger.info('[input] dictionary: {} types'.format(len(data_dict)))
 
         label_dict = None
         if not args.regression_target:
@@ -99,7 +102,7 @@ class SentencePredictionTask(FairseqTask):
                 os.path.join(args.data, 'label', 'dict.txt'),
                 source=False,
             )
-            print('| [label] dictionary: {} types'.format(len(label_dict)))
+            logger.info('[label] dictionary: {} types'.format(len(label_dict)))
         else:
             label_dict = data_dict
         return SentencePredictionTask(args, data_dict, label_dict)
@@ -114,7 +117,7 @@ class SentencePredictionTask(FairseqTask):
 
             dataset = data_utils.load_indexed_dataset(
                 split_path,
-                self.source_dictionary,
+                dictionary,
                 self.args.dataset_impl,
                 combine=combine,
             )
@@ -164,23 +167,28 @@ class SentencePredictionTask(FairseqTask):
             )
 
         if not self.args.regression_target:
-            label_dataset = make_dataset('label', self.target_dictionary)
+            label_dataset = make_dataset('label', self.label_dictionary)
             if label_dataset is not None:
                 dataset.update(
                     target=OffsetTokensDataset(
                         StripTokenDataset(
                             label_dataset,
-                            id_to_strip=self.target_dictionary.eos(),
+                            id_to_strip=self.label_dictionary.eos(),
                         ),
-                        offset=-self.target_dictionary.nspecial,
+                        offset=-self.label_dictionary.nspecial,
                     )
                 )
         else:
             label_path = "{0}.label".format(get_path('label', split))
             if os.path.exists(label_path):
+                def parse_regression_target(i, line):
+                    values = line.split()
+                    assert len(values) == self.args.num_classes, \
+                        f'expected num_classes={self.args.num_classes} regression target values on line {i}, found: "{line}"'
+                    return [float(x) for x in values]
                 dataset.update(
                     target=RawLabelDataset([
-                        float(x.strip()) for x in open(label_path).readlines()
+                        parse_regression_target(i, line.strip()) for i, line in enumerate(open(label_path).readlines())
                     ])
                 )
 
@@ -198,7 +206,7 @@ class SentencePredictionTask(FairseqTask):
                 sort_order=[shuffle],
             )
 
-        print("| Loaded {0} with #samples: {1}".format(split, len(dataset)))
+        logger.info("Loaded {0} with #samples: {1}".format(split, len(dataset)))
 
         self.datasets[split] = dataset
         return self.datasets[split]

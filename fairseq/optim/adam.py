@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import math
 import types
 
@@ -12,6 +13,8 @@ import torch.distributed as dist
 
 from fairseq.optim import FairseqOptimizer, register_optimizer
 from fairseq.optim.fused_adam import get_fused_adam_class
+
+logger = logging.getLogger(__name__)
 
 
 @register_optimizer('adam')
@@ -26,8 +29,13 @@ class FairseqAdam(FairseqOptimizer):
     def __init__(self, args, params):
         super().__init__(args)
         fused_adam_cls = get_fused_adam_class()
-        if fused_adam_cls is not None and torch.cuda.is_available():
-            print('| using FusedAdam')
+        use_fused_adam = (
+            not getattr(args, 'use_old_adam', False)
+            and fused_adam_cls is not None
+            and torch.cuda.is_available()
+        )
+        if use_fused_adam:
+            logger.info('using FusedAdam')
             self._optimizer = fused_adam_cls(params, **self.optimizer_config)
         else:
             self._optimizer = Adam(params, **self.optimizer_config)
@@ -42,6 +50,14 @@ class FairseqAdam(FairseqOptimizer):
                             help='epsilon for Adam optimizer')
         parser.add_argument('--weight-decay', '--wd', default=0.0, type=float, metavar='WD',
                             help='weight decay')
+        # Maintain backward compatibility with old checkpoints that have stored
+        # optimizer state as fairseq.optim.adam.Adam.
+        parser.add_argument(
+            "--use-old-adam",
+            action='store_true',
+            default=False,
+            help="Use fairseq.optim.adam.Adam",
+        )
         # fmt: on
 
     @property
@@ -106,6 +122,10 @@ class Adam(torch.optim.Optimizer):
 
     @property
     def supports_memory_efficient_fp16(self):
+        return True
+
+    @property
+    def supports_flat_params(self):
         return True
 
     def step(self, closure=None):
@@ -175,6 +195,8 @@ class Adam(torch.optim.Optimizer):
 
                 p_data_fp32.addcdiv_(-step_size, exp_avg, denom)
 
-                p.data.copy_(p_data_fp32)
+                # TODO: remove check once pyTorch avoids a copy for this case
+                if p.data_ptr() != p_data_fp32.data_ptr():
+                    p.data.copy_(p_data_fp32)
 
         return loss
