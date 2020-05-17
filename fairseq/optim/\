@@ -15,9 +15,6 @@ from fairseq.optim import FairseqOptimizer, register_optimizer
 from fairseq.optim.fused_adam import get_fused_adam_class
 
 logger = logging.getLogger(__name__)
-
-
-
 @register_optimizer('adam_adawu')
 class FairseqAdamAdaWU(FairseqOptimizer):
     """Adam optimizer for fairseq.

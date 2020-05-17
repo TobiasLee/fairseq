@@ -143,6 +143,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
                                  'Must be used with adaptive_loss criterion'),
         parser.add_argument('--adaptive-softmax-dropout', type=float, metavar='D',
                             help='sets adaptive softmax dropout for the tail projections')
+
         parser.add_argument('--layernorm-embedding', action='store_true',
                             help='add layernorm to embedding')
         parser.add_argument('--no-scale-embedding', action='store_true',
@@ -282,6 +283,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         )
         return decoder_out
 
+    def get_decoder_states(self):
+        return self.decoder.decoder_states  # Tuple(x0, x_L)
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,
     # I rewrite the get_normalized_probs from Base Class to call the
     # helper function in the Base Class.
@@ -825,6 +828,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         x = F.dropout(x, p=self.dropout, training=self.training)
 
+        self.decoder_states = [x]
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
 
@@ -881,7 +885,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
-
+        self.decoder_states.append(x)
         if self.project_out_dim is not None:
             x = self.project_out_dim(x)
 
@@ -965,6 +969,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         return state_dict
 
 
+
 def Embedding(num_embeddings, embedding_dim, padding_idx):
     m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
     nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
@@ -1038,6 +1043,7 @@ def transformer_iwslt_de_en(args):
     base_architecture(args)
 
 
+
 @register_model_architecture("transformer", "transformer_wmt_en_de")
 def transformer_wmt_en_de(args):
     base_architecture(args)
@@ -1092,3 +1098,4 @@ def transformer_wmt_en_de_big_align(args):
     args.alignment_heads = getattr(args, "alignment_heads", 1)
     args.alignment_layer = getattr(args, "alignment_layer", 4)
     transformer_wmt_en_de_big(args)
+

@@ -20,9 +20,7 @@ from fairseq.file_io import PathManager
 from fairseq.logging import meters, metrics
 from fairseq.nan_detector import NanDetector
 from fairseq.optim import lr_scheduler
-from fairseq.optim.lr_scheduler.adaptive_warmup import AdaptiveWarmupScheduler
-
-
+from fairseq.optim.lr_scheduler.adaptive_warmup import AdaptiveWarmupScheduler, AdaptiveWarmupSchedulerTerm
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +62,6 @@ class Trainer(object):
         self._warn_once = set()
         self._wrapped_criterion = None
         self._wrapped_model = None
-
         if self.cuda and self.data_parallel_world_size > 1:
             self._grad_norm_buf = torch.cuda.DoubleTensor(self.data_parallel_world_size)
         else:
@@ -171,9 +168,10 @@ class Trainer(object):
         # building the optimizer, so that the initial learning rate is set.
         if self.args.lr_scheduler == "adaptive_warmup":  # using adaptive warmup
             self._lr_scheduler = AdaptiveWarmupScheduler(self.args, self.optimizer, self.model)
+        elif self.args.lr_scheduler == "adaptive_warmup_term":
+            self._lr_scheduler = AdaptiveWarmupSchedulerTerm(self.args, self.optimizer, self.model)        
         else:
             self._lr_scheduler = lr_scheduler.build_lr_scheduler(self.args, self.optimizer)
-       # self._lr_scheduler = lr_scheduler.build_lr_scheduler(self.args, self.optimizer)
         self._lr_scheduler.step_update(0)
 
     def save_checkpoint(self, filename, extra_state):
@@ -382,7 +380,7 @@ class Trainer(object):
                         update_num=self.get_num_updates(),
                         ignore_grad=is_dummy_batch,
                     )
-                    del loss
+                    # del loss
 
                 logging_outputs.append(logging_output)
                 sample_size += sample_size_i
@@ -440,12 +438,17 @@ class Trainer(object):
                 self._check_grad_norms(grad_norm)
             # take an optimization step
             updated = False
-            if isinstance(self.lr_scheduler, AdaptiveWarmupScheduler):
+            if isinstance(self.lr_scheduler, AdaptiveWarmupScheduler) :
                 self.set_num_updates(self.get_num_updates() + 1)
+                updated = True
+                self.optimizer.step()
+            elif isinstance(self.lr_scheduler,  AdaptiveWarmupSchedulerTerm):
+                self.set_num_updates(self.get_num_updates() + 1, loss)
                 updated = True
                 self.optimizer.step()
             else:
                 self.optimizer.step()
+            del loss
             # take an optimization step
 
         except FloatingPointError:
@@ -562,9 +565,12 @@ class Trainer(object):
         # prefer updating the LR based on the number of steps
         return self.lr_step_update()
 
-    def lr_step_update(self):
+    def lr_step_update(self, loss=None):
         """Update the learning rate after each update."""
-        new_lr = self.lr_scheduler.step_update(self.get_num_updates())
+        if loss is not None:
+            new_lr = self.lr_scheduler.step_update(self.get_num_updates(), loss)
+        else:
+            new_lr = self.lr_scheduler.step_update(self.get_num_updates())
         metrics.log_scalar("lr", new_lr, weight=0, priority=300)
         return new_lr
 
@@ -625,10 +631,10 @@ class Trainer(object):
         """Get the number of parameters updates."""
         return self._num_updates
 
-    def set_num_updates(self, num_updates):
+    def set_num_updates(self, num_updates, loss=None):
         """Set the number of parameters updates."""
         self._num_updates = num_updates
-        self.lr_step_update()
+        self.lr_step_update(loss)
         if self.quantizer:
             self.quantizer.step_update(self._num_updates)
         metrics.log_scalar("num_updates", self._num_updates, weight=0, priority=200)
@@ -808,3 +814,4 @@ class Trainer(object):
                 if key_to_delete in logging_output:
                     del logging_output[key_to_delete]
             return logging_output
+
