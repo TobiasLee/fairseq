@@ -283,6 +283,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         )
         return decoder_out
 
+    def get_decoder_states(self):
+        return self.decoder.decoder_states  # Tuple(x0, x_L)
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,
     # I rewrite the get_normalized_probs from Base Class to call the
     # helper function in the Base Class.
@@ -826,6 +828,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         x = F.dropout(x, p=self.dropout, training=self.training)
 
+        self.decoder_state = [x]
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
 
@@ -882,7 +885,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
-
+        self.decoder_state.append(x)
         if self.project_out_dim is not None:
             x = self.project_out_dim(x)
 

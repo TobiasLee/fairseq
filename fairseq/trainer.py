@@ -172,7 +172,6 @@ class Trainer(object):
             self._lr_scheduler = AdaptiveWarmupScheduler(self.args, self.optimizer, self.model)
         else:
             self._lr_scheduler = lr_scheduler.build_lr_scheduler(self.args, self.optimizer)
-       # self._lr_scheduler = lr_scheduler.build_lr_scheduler(self.args, self.optimizer)
         self._lr_scheduler.step_update(0)
 
     def save_checkpoint(self, filename, extra_state):
