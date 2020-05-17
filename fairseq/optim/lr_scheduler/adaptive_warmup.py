@@ -85,6 +85,7 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
 
         current_ratio = layer_lo / layer_hi  # current ratio is a scalar
         # print(num_updates, current_ratio)
+        metrics.log_scalar('current_ratio', current_ratio)  # log to metrics for checkout
         del layer_hi, layer_lo
         if num_updates == 1:
             self.scale_factor = 1  # first compute ratio
