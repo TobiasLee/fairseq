@@ -53,9 +53,9 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
                             help='warmup the learning rate linearly for the first N updates')
         parser.add_argument('--warmup-init-lr', default=-1, type=float, metavar='LR',
                             help='initial learning rate during warmup phase; default is args.lr')
-        parser.add_argument('--bound_lo', default=0.75, type=float, metavar='BLO',
+        parser.add_argument('--bound-lo', default=0.75, type=float, metavar='BLO',
                             help='ratio lower bound')
-        parser.add_argument('--bound_hi', default=1.5, type=float, metavar='BHI',
+        parser.add_argument('--bound-hi', default=1.5, type=float, metavar='BHI',
                             help='ratio higher bound')
         parser.add_argument('--beta3', default=0.99, type=float, metavar='BT3',
                             help='ratio higher bound')
@@ -148,9 +148,9 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
                             help='warmup the learning rate linearly for the first N updates')
         parser.add_argument('--warmup-init-lr', default=-1, type=float, metavar='LR',
                             help='initial learning rate during warmup phase; default is args.lr')
-        parser.add_argument('--bound_lo', default=0.75, type=float, metavar='BLO',
+        parser.add_argument('--bound-lo', default=0.75, type=float, metavar='BLO',
                             help='ratio lower bound')
-        parser.add_argument('--bound_hi', default=1.5, type=float, metavar='BHI',
+        parser.add_argument('--bound-hi', default=1.5, type=float, metavar='BHI',
                             help='ratio higher bound')
         parser.add_argument('--beta3', default=0.99, type=float, metavar='BT3',
                             help='ratio higher bound')
