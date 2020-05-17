@@ -109,7 +109,7 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
 
 
 @register_lr_scheduler('adaptive_warmup_term')
-class AdaptiveWarmupScheduler(FairseqLRScheduler):
+class AdaptiveWarmupSchedulerTerm(FairseqLRScheduler):
     def __init__(self, args, optimizer, model=None):
         super().__init__(args, optimizer)
         if len(args.lr) > 1:

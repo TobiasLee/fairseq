@@ -24,11 +24,11 @@ mkdir -p $RESULT_PATH
 CUDA_VISIBLE_DEVICES=$GPU python3 train.py $DATA_PATH \
     --seed $SEED  \
     -a $ARCH  --share-all-embeddings  \
-    --optimizer adam --lr $LR  -s de -t en \
+    --optimizer adam_adawu --lr $LR  -s de -t en \
     --tensorboard-logdir $OUTPUT_PATH --empty-cache-freq 500\
     --clip-norm 0.0 --keep-last-epochs 30 \
     --label-smoothing 0.1 --dropout 0.3 --max-tokens 4096 \
-    --lr-scheduler adaptive_warmup --weight-decay 0.0001 \
+    --lr-scheduler adaptive_warmup_term --weight-decay 0.0001 \
     --criterion label_smoothed_cross_entropy --bound-lo $BOUND_LO --bound-hi $BOUND_HI \
     --beta3 $BETA3 --beta4 $BETA4 \
     --max-update 0  --max-update 60000 \

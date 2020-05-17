@@ -20,9 +20,7 @@ from fairseq.file_io import PathManager
 from fairseq.logging import meters, metrics
 from fairseq.nan_detector import NanDetector
 from fairseq.optim import lr_scheduler
-from fairseq.optim.lr_scheduler.adaptive_warmup import AdaptiveWarmupScheduler
-
-
+from fairseq.optim.lr_scheduler.adaptive_warmup import AdaptiveWarmupScheduler, AdaptiveWarmupSchedulerTerm
 
 logger = logging.getLogger(__name__)
 
@@ -438,7 +436,7 @@ class Trainer(object):
                 self._check_grad_norms(grad_norm)
             # take an optimization step
             updated = False
-            if isinstance(self.lr_scheduler, AdaptiveWarmupScheduler):
+            if isinstance(self.lr_scheduler, AdaptiveWarmupScheduler) or isinstance(self.lr_scheduler, AdaptiveWarmupSchedulerTerm):
                 self.set_num_updates(self.get_num_updates() + 1)
                 updated = True
                 self.optimizer.step()
