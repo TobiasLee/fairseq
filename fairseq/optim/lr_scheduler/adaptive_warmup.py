@@ -80,12 +80,8 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         if self.hi_param.grad is not None:
             layer_hi = self.hi_param.grad.data.float().norm().item()
 
-            # else:
-            #     layer_hi = param.grad.data.float().norm().item()
-
         current_ratio = layer_lo / layer_hi  # current ratio is a scalar
         # print(num_updates, current_ratio)
-        metrics.log_scalar('current_ratio', current_ratio)  # log to metrics for checkout
         del layer_hi, layer_lo
         if num_updates == 1:
             self.scale_factor = 1  # first compute ratio
@@ -104,6 +100,10 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
             self.lr = self.decay_factor * num_updates ** -0.5
             # self.optimizer.set_lr(self.lr * self.scale_factor)
             # return self.lr * self.scale_factor
+        with metrics.aggregate('train_inner'):
+            metrics.log_scalar('current_ratio', current_ratio, weight=0, priority=30)  # log to metrics for checkout
+            metrics.log_scalar('scale_factor', self.scale_factor, weight=0, priority=35)  # log to metrics for checkout
+
         self.optimizer.set_lr(self.scale_factor * self.lr)
         return self.scale_factor * self.lr
 
@@ -171,16 +171,15 @@ class AdaptiveWarmupSchedulerTerm(FairseqLRScheduler):
             return self.scale_factor * self.lr
 
         dec_x0, dec_xL = self.model.get_decoder_states()
-        grad_x0 = torch.grad(loss, dec_x0, retain_graph=True)
-        grad_xL = torch.grad(loss, dec_xL, retain_graph=False)  # release graph
+        grad_x0 = torch.autograd.grad(loss, dec_x0, retain_graph=True)
+        grad_xL = torch.autograd.grad(loss, dec_xL, retain_graph=False)  # release graph
 
         layer_lo, layer_hi = 1, 1
         if grad_x0 is not None:
-            layer_lo = grad_x0.data.float().norm().item()
+            layer_lo = grad_x0[0].data.float().norm().item()
         if grad_xL is not None:
-            layer_hi = grad_xL.data.float().norm().item()
+            layer_hi = grad_xL[0].data.float().norm().item()
         current_ratio = layer_lo / layer_hi  # current ratio is a scalar
-        metrics.log_scalar('current_ratio', current_ratio)  # log to metrics for checkout
         # print(num_updates, current_ratio)
         del layer_hi, layer_lo
         if num_updates == 1:
@@ -200,5 +199,10 @@ class AdaptiveWarmupSchedulerTerm(FairseqLRScheduler):
             self.lr = self.decay_factor * num_updates ** -0.5
             # self.optimizer.set_lr(self.lr * self.scale_factor)
             # return self.lr * self.scale_factor
+
+        with metrics.aggregate('train_inner'):    
+            metrics.log_scalar('current_ratio', current_ratio, weight=0, priority=30)  # log to metrics for checkout
+            metrics.log_scalar('scale_factor', self.scale_factor, weight=0, priority=35)  # log to metrics for checkout
+       
         self.optimizer.set_lr(self.scale_factor * self.lr)
         return self.scale_factor * self.lr
