@@ -44,6 +44,7 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         self.ratio_exp_avg = 0.0
         # after wu steps, we change back to invert sqrt decay
         self.decay_factor = warmup_end_lr * args.warmup_updates ** 0.5
+        self.normal_wu = args.normal_wu
 
     @staticmethod
     def add_args(parser):
@@ -61,6 +62,8 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
                             help='ratio higher bound')
         parser.add_argument('--beta4', default=0.995, type=float, metavar='BT4',
                             help='ratio higher bound')
+        parser.add_argument('--normal-wu', default=False, type=bool,
+                            help='change back to normal warmup + invert sqrt lr scheduler')
         # fmt: on
 
     def step(self, epoch, val_loss=None):
@@ -69,8 +72,11 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         # we don't change the learning rate at epoch boundaries
         return self.optimizer.get_lr()
 
-    def step_update(self, num_updates):
+    def step_update(self, num_updates, loss=None):
         """Update the learning rate after each update."""
+        if loss is None:
+            self.optimizer.set_lr(self.scale_factor * self.lr)
+            return self.scale_factor * self.lr
 
         # adaptive warmup learning rate
         layer_lo, layer_hi = 1, 1
@@ -80,13 +86,27 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
         if self.hi_param.grad is not None:
             layer_hi = self.hi_param.grad.data.float().norm().item()
 
-            # else:
-            #     layer_hi = param.grad.data.float().norm().item()
-
         current_ratio = layer_lo / layer_hi  # current ratio is a scalar
-        # print(num_updates, current_ratio)
-        metrics.log_scalar('current_ratio', current_ratio)  # log to metrics for checkout
         del layer_hi, layer_lo
+        with metrics.aggregate('train_inner'):
+            metrics.log_scalar('current_ratio', current_ratio, weight=0, priority=30)
+        if self.normal_wu:
+            if num_updates < self.args.warmup_updates:
+                self.lr = self.args.warmup_init_lr + num_updates * self.lr_step
+            else:
+                self.lr = self.decay_factor * num_updates ** -0.5
+            self.optimizer.set_lr(self.lr)
+            return self.lr
+        else:
+            self.adaptive_lr(num_updates, current_ratio)
+
+        with metrics.aggregate('train_inner'):
+            metrics.log_scalar('scale_factor', self.scale_factor, weight=0, priority=35)  # log to metrics for checkout
+
+        self.optimizer.set_lr(self.scale_factor * self.lr)
+        return self.scale_factor * self.lr
+
+    def adaptive_lr(self, num_updates, current_ratio):
         if num_updates == 1:
             self.scale_factor = 1  # first compute ratio
             self.ratio_exp_avg = self.beta3 * self.ratio_exp_avg + (1 - self.beta3) * current_ratio
@@ -98,18 +118,14 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
             self.scale_factor = self.scale_factor * self.beta4 + (1 - self.beta4) * 1.0
             # update ratio avg
             self.ratio_exp_avg = self.beta3 * self.ratio_exp_avg + (1 - self.beta3) * current_ratio
-            # print("scale factor: %.9f  ratio_exp_avg: %.9f" % (self.scale_factor, self.ratio_exp_avg))
+
         elif self.args.warmup_updates + 1 <= num_updates:  # finish adaptive warmup steps,  we do not do decay anymore
             self.scale_factor = self.scale_factor * self.beta4 + (1 - self.beta4) * 1.0  # back to 1 within 100 steps
             self.lr = self.decay_factor * num_updates ** -0.5
-            # self.optimizer.set_lr(self.lr * self.scale_factor)
-            # return self.lr * self.scale_factor
-        self.optimizer.set_lr(self.scale_factor * self.lr)
-        return self.scale_factor * self.lr
 
 
 @register_lr_scheduler('adaptive_warmup_term')
-class AdaptiveWarmupSchedulerTerm(FairseqLRScheduler):
+class AdaptiveWarmupSchedulerTerm(AdaptiveWarmupScheduler):
     def __init__(self, args, optimizer, model=None):
         super().__init__(args, optimizer)
         if len(args.lr) > 1:
@@ -140,29 +156,6 @@ class AdaptiveWarmupSchedulerTerm(FairseqLRScheduler):
         # after wu steps, we change back to invert sqrt decay
         self.decay_factor = warmup_end_lr * args.warmup_updates ** 0.5
 
-    @staticmethod
-    def add_args(parser):
-        """Add arguments to the parser for this LR scheduler."""
-        # fmt: off
-        parser.add_argument('--warmup-updates', default=4000, type=int, metavar='N',
-                            help='warmup the learning rate linearly for the first N updates')
-        parser.add_argument('--warmup-init-lr', default=-1, type=float, metavar='LR',
-                            help='initial learning rate during warmup phase; default is args.lr')
-        parser.add_argument('--bound-lo', default=0.75, type=float, metavar='BLO',
-                            help='ratio lower bound')
-        parser.add_argument('--bound-hi', default=1.5, type=float, metavar='BHI',
-                            help='ratio higher bound')
-        parser.add_argument('--beta3', default=0.99, type=float, metavar='BT3',
-                            help='ratio higher bound')
-        parser.add_argument('--beta4', default=0.995, type=float, metavar='BT4',
-                            help='ratio higher bound')
-        # fmt: on
-
-    def step(self, epoch, val_loss=None):
-        """Update the learning rate at the end of the given epoch."""
-        super().step(epoch, val_loss)
-        # we don't change the learning rate at epoch boundaries
-        return self.optimizer.get_lr()
 
     def step_update(self, num_updates, loss=None):
         """Update the learning rate after each update."""
@@ -182,27 +175,23 @@ class AdaptiveWarmupSchedulerTerm(FairseqLRScheduler):
         current_ratio = layer_lo / layer_hi  # current ratio is a scalar
         # print(num_updates, current_ratio)
         del layer_hi, layer_lo
-        if num_updates == 1:
-            self.scale_factor = 1  # first compute ratio
-            self.ratio_exp_avg = self.beta3 * self.ratio_exp_avg + (1 - self.beta3) * current_ratio
-        elif 1 < num_updates < self.args.warmup_updates + 1:
-            decay_ratio = current_ratio * (1 - self.beta3 ** (num_updates - 1)) / (self.ratio_exp_avg + 1e-9)
-            if decay_ratio > self.bound_hi or decay_ratio < self.bound_lo:
-                self.scale_factor /= 2
-            # update s_t for learning rate adjustment
-            self.scale_factor = self.scale_factor * self.beta4 + (1 - self.beta4) * 1.0
-            # update ratio avg
-            self.ratio_exp_avg = self.beta3 * self.ratio_exp_avg + (1 - self.beta3) * current_ratio
-            # print("scale factor: %.9f  ratio_exp_avg: %.9f" % (self.scale_factor, self.ratio_exp_avg))
-        elif self.args.warmup_updates + 1 <= num_updates:  # finish adaptive warmup steps,  we do not do decay anymore
-            self.scale_factor = self.scale_factor * self.beta4 + (1 - self.beta4) * 1.0  # back to 1 within 100 steps
-            self.lr = self.decay_factor * num_updates ** -0.5
-            # self.optimizer.set_lr(self.lr * self.scale_factor)
-            # return self.lr * self.scale_factor
-        with metrics.aggregate('train_inner'):    
+
+        with metrics.aggregate('train_inner'):
             metrics.log_scalar('current_ratio', current_ratio, weight=0, priority=30)  # log to metrics for checkout
+
+        if self.normal_wu:
+            if num_updates < self.args.warmup_updates:
+                self.lr = self.args.warmup_init_lr + num_updates * self.lr_step
+            else:
+                self.lr = self.decay_factor * num_updates ** -0.5
+            self.optimizer.set_lr(self.lr)
+            return self.lr
+        else:
+            self.adaptive_lr(num_updates, current_ratio)
+
+        with metrics.aggregate('train_inner'):
             metrics.log_scalar('scale_factor', self.scale_factor, weight=0, priority=35)  # log to metrics for checkout
-       
+
         self.optimizer.set_lr(self.scale_factor * self.lr)
         return self.scale_factor * self.lr
 
