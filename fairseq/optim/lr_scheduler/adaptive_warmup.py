@@ -156,7 +156,6 @@ class AdaptiveWarmupSchedulerTerm(AdaptiveWarmupScheduler):
         # after wu steps, we change back to invert sqrt decay
         self.decay_factor = warmup_end_lr * args.warmup_updates ** 0.5
 
-
     def step_update(self, num_updates, loss=None):
         """Update the learning rate after each update."""
         if loss is None:
