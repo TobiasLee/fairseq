@@ -143,7 +143,6 @@ class AdaptiveWarmupSchedulerTerm(AdaptiveWarmupScheduler):
         assert isinstance(self.optimizer, FairseqAdamAdaWU), 'we need a override adam for loss backward'
         assert model is not None, "We need a model reference for getting param stats"
         self.model = model
-        self.lo_param, self.hi_param = None, None
 
         # hyper params for ada-warmup
         self.bound_lo = args.bound_lo
