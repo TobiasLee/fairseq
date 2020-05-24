@@ -127,7 +127,7 @@ class AdaptiveWarmupScheduler(FairseqLRScheduler):
 @register_lr_scheduler('adaptive_warmup_term')
 class AdaptiveWarmupSchedulerTerm(AdaptiveWarmupScheduler):
     def __init__(self, args, optimizer, model=None):
-        super().__init__(args, optimizer)
+        super().__init__(args, optimizer, model=model)
         if len(args.lr) > 1:
             raise ValueError(
                 'Cannot use a fixed learning rate schedule with inverse_sqrt.'
